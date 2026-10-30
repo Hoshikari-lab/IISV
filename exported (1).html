@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Simulador Sísmico Institucional</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+    #map { position: relative; height: 500px; width: 100%; margin-top: 20px; z-index: 1; }
+    label, button { display: block; margin-top: 10px; font-size: 1em; }
+    button {
+      padding: 10px 20px;
+      font-weight: bold;
+      background: #004c99;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .timestamp, #contadorSimulacion {
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1em;
+    }
+    .footer {
+      margin-top: 30px;
+      font-size: 0.9em;
+      color: #555;
+    }
+    #tablaIntensidad {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255,255,255,0.95);
+      border: 1px solid #aaa;
+      padding: 8px;
+      font-size: 0.85em;
+      z-index: 999;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      max-width: 180px;
+    }
+    #tablaIntensidad table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    #tablaIntensidad th, #tablaIntensidad td {
+      border: 1px solid #aaa;
+      padding: 4px;
+      text-align: center;
+    }
+    #tablaIntensidad th {
+      background: #ddd;
+    }
+#institutoMxOverlay {
+  position: absolute;
+  bottom: 440px;
+  left: 50px;
+  background: rgba(255, 255, 255, 0.85); /* Fondo para el panel general */
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+  font-size: 0.9em;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  z-index: 999;
+  width: auto;
+  max-width: 360px;
+}
+
+.institutoMxRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.institutoMxCount {
+  font-size: 1em;
+  font-weight: bold;
+  color: #004c99;
+  background: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.institutoMxArrows {
+  font-size: 1.4em;
+  color: green;
+  background: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.institutoMxText {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Centra horizontalmente los textos */
+  justify-content: center; /* Centra verticalmente si hay espacio */
+  text-align: center;
+}
+
+.institutoMxTitle {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #004c99;
+  background: none; /* Sin fondo */
+}
+
+.institutoMxSub {
+  font-size: 0.75em;
+  color: #555;
+  background: none; /* Sin fondo */
+}
+
+    /* Sensores triangulares: tamaño fijo en píxeles, visibles en todos los niveles de zoom */
+    .sensor-triangle-icon {
+      background: transparent;
+      border: 0;
+    }
+    .sensor-triangle {
+      display: block;
+      width: 0;
+      height: 0;
+      margin: 2px auto 0;
+      border-left: 9px solid transparent;
+      border-right: 9px solid transparent;
+      border-bottom: 16px solid var(--sensor-fill, #9aa4b2);
+      filter: drop-shadow(0 0 1.5px #111) drop-shadow(0 1px 2px rgba(0,0,0,.9));
+      transform: translateY(0);
+      transition: filter .12s ease, transform .12s ease;
+    }
+    .sensor-triangle-icon:hover .sensor-triangle {
+      transform: scale(1.25);
+      filter: drop-shadow(0 0 3px #fff) drop-shadow(0 1px 2px #111);
+    }
+    .sensor-triangle-icon.sensor-parpadeo .sensor-triangle {
+      filter: drop-shadow(0 0 4px #ff2020) drop-shadow(0 0 2px #ff2020);
+    }
+    #map { min-height: 500px; }
+    @media (max-width: 700px) {
+      #map { height: 65vh; min-height: 420px; }
+      #tablaIntensidad { top: 8px; right: 8px; max-width: 145px; font-size: .72em; }
+      #institutoMxOverlay { left: 8px; bottom: 8px; max-width: 230px; font-size: .78em; }
+    }
+
+  
+/* =========================
+   INTERFAZ — CENTRO SÍSMICO
+   Rediseño visual; lógica original intacta
+   ========================= */
+:root {
+  color-scheme: dark;
+  --bg: #07111f;
+  --panel: #101f32;
+  --panel-2: #142840;
+  --line: rgba(148, 178, 207, .18);
+  --text: #eaf3fb;
+  --muted: #91a8bf;
+  --cyan: #45d7e8;
+  --blue: #438bff;
+  --shadow: 0 18px 45px rgba(0, 0, 0, .28);
+}
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  padding: clamp(16px, 3vw, 38px);
+  color: var(--text);
+  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(31, 112, 166, .22), transparent 36%),
+    radial-gradient(ellipse at 100% 15%, rgba(28, 78, 135, .18), transparent 32%),
+    linear-gradient(145deg, #07111f 0%, #0a1727 48%, #0b1b2d 100%);
+  overflow-x: hidden;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .14;
+  background-image: linear-gradient(rgba(148,178,207,.08) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(148,178,207,.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black, transparent 80%);
+}
+h1 {
+  position: relative;
+  margin: 0 auto 28px;
+  max-width: 1180px;
+  padding: 25px 30px 25px 88px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: #f4fbff !important;
+  text-align: left !important;
+  font-size: clamp(1.35rem, 3vw, 2.15rem);
+  line-height: 1.2;
+  letter-spacing: -.04em;
+  background: linear-gradient(115deg, rgba(18, 43, 68, .96), rgba(13, 29, 48, .92));
+  box-shadow: var(--shadow);
+}
+h1::before {
+  content: "⌁";
+  position: absolute;
+  left: 27px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border: 1px solid rgba(69,215,232,.45);
+  border-radius: 13px;
+  color: var(--cyan);
+  font-size: 2rem;
+  background: rgba(69,215,232,.09);
+}
+h1::after {
+  content: "MONITOREO · ANÁLISIS · SIMULACIÓN";
+  display: block;
+  margin-top: 9px;
+  color: #8da9c2;
+  font-size: .64rem;
+  font-weight: 700;
+  letter-spacing: .19em;
+}
+label {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 9px;
+  vertical-align: top;
+  width: calc(16.66% - 13px);
+  min-width: 150px;
+  margin: 0 8px 14px 0;
+  padding: 14px 15px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: #a9bfd3;
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+  background: linear-gradient(145deg, rgba(20,40,64,.96), rgba(13,29,47,.96));
+  box-shadow: 0 8px 22px rgba(0,0,0,.12);
+}
+input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(135,169,199,.24);
+  border-radius: 8px;
+  outline: none;
+  color: #f3f9ff;
+  font: 600 .96rem "Segoe UI", sans-serif;
+  background: #091727;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+  color-scheme: dark;
+}
+input:focus {
+  border-color: var(--cyan);
+  background: #0c2034;
+  box-shadow: 0 0 0 3px rgba(69,215,232,.12);
+}
+#simularBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  margin: 0 0 14px;
+  padding: 0 25px;
+  border: 1px solid rgba(95,220,237,.5);
+  border-radius: 11px;
+  color: #041522;
+  font-size: .86rem;
+  font-weight: 800;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #63e5e9, #45a9f5);
+  box-shadow: 0 9px 24px rgba(38,170,218,.2);
+  cursor: pointer;
+  transition: transform .2s, filter .2s, box-shadow .2s;
+}
+#simularBtn::before { content: "▶"; margin-right: 10px; font-size: .72rem; }
+#simularBtn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.08);
+  box-shadow: 0 13px 28px rgba(38,170,218,.3);
+}
+#simularBtn:active { transform: translateY(0); }
+.timestamp, #contadorSimulacion {
+  width: fit-content;
+  max-width: 100%;
+  margin: 2px 0 14px;
+  padding: 11px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: #b9d1e6;
+  font-size: .85rem;
+  background: rgba(16,31,50,.88);
+}
+#horaSimulacion:empty { display: none; }
+#contadorSimulacion { color: #d9f8fb; }
+#contadorSimulacion span { color: var(--cyan); font-weight: 800; }
+#map {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: min(68vh, 720px);
+  min-height: 470px;
+  margin: 10px 0 18px;
+  overflow: hidden;
+  border: 1px solid rgba(113,169,207,.35);
+  border-radius: 20px;
+  background: #0b1b2b;
+  box-shadow: 0 22px 55px rgba(0,0,0,.34), 0 0 0 5px rgba(72,144,190,.045);
+}
+.leaflet-container { font-family: inherit; }
+.leaflet-control-zoom a {
+  color: #eaf6ff !important;
+  border-color: rgba(140,177,207,.2) !important;
+  background: rgba(11,27,44,.94) !important;
+}
+.leaflet-control-attribution {
+  color: #526b80 !important;
+  background: rgba(7,17,31,.8) !important;
+}
+.leaflet-control-attribution a { color: #7bbbd2 !important; }
+.leaflet-tooltip {
+  padding: 7px 10px;
+  border: 1px solid rgba(69,215,232,.32);
+  border-radius: 8px;
+  color: #eaf8ff;
+  background: rgba(7,20,34,.95);
+  box-shadow: 0 6px 18px rgba(0,0,0,.28);
+}
+.leaflet-tooltip::before { border-top-color: rgba(7,20,34,.95) !important; }
+#tablaIntensidad {
+  top: 16px;
+  right: 16px;
+  max-width: 190px;
+  padding: 12px;
+  border: 1px solid rgba(155,190,218,.24);
+  border-radius: 13px;
+  color: #e8f2fb;
+  font-size: .75rem;
+  background: rgba(8,22,37,.93);
+  box-shadow: 0 12px 28px rgba(0,0,0,.3);
+  backdrop-filter: blur(12px);
+}
+#tablaIntensidad table { border-collapse: separate; border-spacing: 0 4px; }
+#tablaIntensidad th {
+  padding: 7px 5px 9px;
+  border: 0;
+  color: #9dbbd3;
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: transparent;
+}
+#tablaIntensidad td {
+  padding: 5px 7px;
+  border: 0;
+  color: #dceaf6;
+  text-align: center;
+  background: rgba(255,255,255,.045);
+}
+#tablaIntensidad td:first-child {
+  width: 35px;
+  border-radius: 5px 0 0 5px;
+}
+#tablaIntensidad td:last-child {
+  border-radius: 0 5px 5px 0;
+  font-variant-numeric: tabular-nums;
+}
+#institutoMxOverlay {
+  left: 16px;
+  bottom: 16px;
+  width: auto;
+  max-width: 320px;
+  padding: 12px 15px;
+  border: 1px solid rgba(155,190,218,.24);
+  border-radius: 13px;
+  color: #eaf5fc;
+  background: rgba(8,22,37,.93);
+  box-shadow: 0 12px 28px rgba(0,0,0,.3);
+  backdrop-filter: blur(12px);
+}
+.institutoMxRow { gap: 10px; }
+.institutoMxCount {
+  padding: 7px 9px;
+  border: 1px solid rgba(69,215,232,.25);
+  border-radius: 8px;
+  color: #72e3eb;
+  font-size: .75rem;
+  background: rgba(69,215,232,.1);
+}
+.institutoMxArrows {
+  padding: 4px 7px;
+  color: #69d9c5;
+  font-size: 1.2rem;
+  background: transparent;
+}
+.institutoMxTitle { color: #f1f8ff; font-size: .98rem; }
+.institutoMxSub { margin-top: 3px; color: #91a8bf; font-size: .68rem; }
+.footer {
+  margin: 22px 0 12px;
+  color: #9bb0c4;
+  font-size: .82rem;
+  line-height: 1.6;
+}
+body > div[style*="text-align: center"] {
+  color: #7791a9 !important;
+  font-size: .75rem !important;
+  letter-spacing: .08em;
+}
+body > div[style*="border-left"] {
+  margin: 18px 0 0 !important;
+  padding: 15px 18px !important;
+  border: 1px solid rgba(255,196,91,.2) !important;
+  border-left: 3px solid #e8ae4d !important;
+  border-radius: 10px;
+  color: #c5bda9;
+  font-size: .8rem !important;
+  line-height: 1.65;
+  background: rgba(63,47,23,.28) !important;
+}
+.sensor-triangle { filter: drop-shadow(0 0 2px #07111f) drop-shadow(0 1px 3px rgba(0,0,0,.9)); }
+@media (max-width: 900px) {
+  label { width: calc(33.33% - 12px); }
+  #map { height: 62vh; }
+}
+@media (max-width: 600px) {
+  body { padding: 13px; }
+  h1 { margin-bottom: 18px; padding: 20px 18px 20px 69px; border-radius: 15px; }
+  h1::before { left: 16px; width: 39px; height: 39px; }
+  h1::after { font-size: .53rem; letter-spacing: .12em; }
+  label { width: calc(50% - 7px); min-width: 0; margin-right: 5px; padding: 11px; font-size: .67rem; }
+  input { padding: 9px 8px; font-size: .9rem; }
+  #simularBtn { width: 100%; }
+  #map { height: 66vh; min-height: 430px; border-radius: 14px; }
+  #tablaIntensidad { top: 8px; right: 8px; max-width: 142px; padding: 7px; font-size: .66rem; }
+  #tablaIntensidad th { font-size: .59rem; }
+  #tablaIntensidad td { padding: 4px; }
+  #institutoMxOverlay { left: 8px; bottom: 8px; max-width: 205px; padding: 8px; font-size: .72rem; }
+  .institutoMxCount { font-size: .65rem; padding: 5px 6px; }
+  .institutoMxTitle { font-size: .82rem; }
+  .institutoMxSub { font-size: .59rem; }
+  .timestamp, #contadorSimulacion { font-size: .75rem; }
+}
+
+  </style>
+</head>
+<body>
+
+  <h1 style="text-align: center; color: #004c99;">Instituto de Investigaciones Sísmicas y Volcánicas</h1>
+
+  <label>Magnitud: <input type="number" id="magnitud" step="0.1" value="7.5" /></label>
+  <label>Profundidad (km): <input type="number" id="profundidad" value="10" /></label>
+  <label>Latitud: <input type="number" id="lat" value="18.0" /></label>
+  <label>Longitud: <input type="number" id="lng" value="-102.0" /></label>
+  <label>Fecha del evento: <input type="date" id="fechaEvento" /></label>
+  <label>Hora del evento: <input type="time" id="horaEvento" value="03:15" /></label>
+  <button id="simularBtn">Simular evento</button>
+
+  <div class="timestamp" id="horaSimulacion"></div>
+
+  <div id="map">
+<!-- Panel horizontal estilo Gempa con nombre y desarrollo sin fondo -->
+<div id="institutoMxOverlay">
+  <div class="institutoMxRow">
+    <div class="institutoMxCount">157 estaciones</div>
+    <div class="institutoMxArrows">⇄</div>
+    <div class="institutoMxText">
+      <div class="institutoMxTitle">Instituto_Mx</div>
+      <div class="institutoMxSub">Desarrollado por el I.I.S.V</div>
+    </div>
+  </div>
+</div>
+
+    <div id="tablaIntensidad">
+      <table>
+  <tr><th>Color</th><th>Movimiento</th></tr>
+  <tr><td style="background:#800000; color:#fff"></td><td>> 150000</td></tr>
+  <tr><td style="background:#ff0000; color:#fff"></td><td>60000</td></tr>
+  <tr><td style="background:#ff9933; color:#fff"></td><td>30000</td></tr>
+  <tr><td style="background:#ffcc33"></td><td>12000</td></tr>
+  <tr><td style="background:#ffff00"></td><td>4000</td></tr>
+  <tr><td style="background:#00ff00"></td><td>1500</td></tr>
+  <tr><td style="background:#53f1f1"></td><td>800</td></tr>
+  <tr><td style="background:#5dc8f3"></td><td>400</td></tr>
+  <tr><td style="background:#0000ff; color:#fff"></td><td>[0,200]</td></tr>
+  <tr><td style="background:#000000; color:#fff"></td><td>Not Set</td></tr>
+  <tr><td style="background:#787878; color:#fff"></td><td>Station is disabled</td></tr>
+</table>
+    </div>
+  </div>
+
+  <div id="contadorSimulacion">⏱️ Tiempo transcurrido: <span id="segundosSimulador">0</span> segundos</div>
+
+  <div class="footer">
+    ⚠️ Herramienta educativa desarrollada por el <strong>Instituto de Investigaciones Sísmicas y Volcánicas</strong>.
+  </div>
+
+  <div style="text-align: center; font-size: 0.85em; color: #555;">
+
+    Simulador Sísmico — <strong>Versión Beta 0.9.7</strong>
+  </div>
+
+<div style="margin-top: 20px; font-size: 0.9em; color: #555; background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; text-align: justify;">
+  ⚠️ <strong>Simulación experimental:</strong> Este modelo representa una aproximación visual a la propagación de ondas sísmicas en tiempo real, basada en parámetros institucionales. Los resultados son referenciales y pueden variar según la magnitud, profundidad y ubicación ingresada. La activación de estaciones, asignación de colores y tiempos de llegada se basa en lógica experimental sujeta a revisión. Esta herramienta no predice eventos reales ni reemplaza sistemas de alerta oficial. Para información validada, consulte directamente al <strong>Instituto de Investigaciones Sísmicas y Volcánicas</strong>.
+</div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const sensores = [
+  // Baja California
+  { nombre: "TJIG - Tijuana, BC", lat: 32.433376, lng: -116.67625 },
+  { nombre: "MBIG - Mexicali, BC", lat: 32.407183, lng: -115.19814 },
+  { nombre: "SPIG - San Pedro Mártir, BC", lat: 31.04597, lng: -115.466025 },
+
+  // Baja California Sur
+  { nombre: "SRIG - Santa Rosalía, BCS", lat: 27.319827, lng: -112.241057 },
+
+  // Sonora
+  { nombre: "HSIG - Hermosillo, Son", lat: 29.019754, lng: -110.94928 },
+  { nombre: "NZIG - Nacozari, Son", lat: 30.37305, lng: -109.554158 },
+
+  // Chihuahua
+  { nombre: "CGIG - Casas Grandes, Chih", lat: 30.365044, lng: -107.977352 },
+  { nombre: "BCIG - La Boquilla, Chih", lat: 27.544763, lng: -105.412656 },
+  { nombre: "HPIG - Hidalgo del Parral, Chih", lat: 26.936794, lng: -105.664017 },
+
+  // Coahuila
+  { nombre: "MCIG - Múzquiz, Coah", lat: 27.877093, lng: -101.483627 },
+
+  // Nuevo León
+  { nombre: "MNIG - Monterrey, NL", lat: 25.6093, lng: -100.2852 },
+  { nombre: "LNIG - Linares, NL", lat: 24.898167, lng: -99.465617 },
+
+  // Sinaloa
+  { nombre: "CSIG - Choix, Sin", lat: 26.8362, lng: -108.3712 },
+  { nombre: "TSIG - Topolobampo, Sin", lat: 25.6048, lng: -109.0465 },
+  { nombre: "SSIG - Sanalona, Sin", lat: 24.8165, lng: -107.1448 },
+  { nombre: "MAIG - Mazatlán, Sin", lat: 23.183967, lng: -106.425517 },
+
+  // Durango
+  { nombre: "PDIG - Papasquiaro, Dgo", lat: 25.04023, lng: -105.395923 },
+
+  // Zacatecas
+  { nombre: "ZAIG - Zacatecas, Zac", lat: 22.7692, lng: -102.567 },
+
+  // Aguascalientes
+  { nombre: "AAIG - Aguascalientes, Ags", lat: 21.968457, lng: -102.3802 },
+
+  // Nayarit
+  { nombre: "ANIG - Ahuacatlán, Nay", lat: 21.053822, lng: -104.520706 },
+
+  // Jalisco
+  { nombre: "CJIG - Chamela, Jal", lat: 19.49943, lng: -105.043867 },
+
+  // Guanajuato
+  { nombre: "IGIG - Irapuato, Gto", lat: 20.753042, lng: -101.327803 },
+
+  // San Luis Potosí
+  { nombre: "RPIG - Río Verde, SLP", lat: 21.88492, lng: -99.982753 },
+
+  // Tamaulipas
+  { nombre: "GTIG - Gómez Farías, Tams", lat: 23.066908, lng: -99.169127 },
+
+  // Michoacán
+  { nombre: "MMIG - Maruata, Mich", lat: 18.288528, lng: -103.345565 },
+  { nombre: "MOIG - Morelia, Mich", lat: 19.646812, lng: -101.227135 },
+
+  // Estado de México
+  { nombre: "ACIG - Acambay, Mex", lat: 19.9845, lng: -99.8823 },
+  { nombre: "PPIG - Popocatépetl, Mex", lat: 19.06705, lng: -98.628148 },
+
+  // Hidalgo
+  { nombre: "DHIG - Demacú, Hgo", lat: 20.3003, lng: -99.035468 },
+
+  // Ciudad de México
+  { nombre: "CUIG - El Pozo, CDMX", lat: 19.329, lng: -99.178 },
+
+  // Morelos
+  { nombre: "YAIG - Yautepec, Mor", lat: 18.862517, lng: -99.066987 },
+
+  // Puebla
+  { nombre: "TPIG - Tehuacán, Pue", lat: 18.42021, lng: -97.361985 },
+
+  // Veracruz
+  { nombre: "LVIG - Laguna Verde, Ver", lat: 19.72622, lng: -96.4185 },
+
+  // Guerrero
+  { nombre: "ARIG - Arcelia, Gro", lat: 18.280492, lng: -100.347494 },
+  { nombre: "PLIG - Platanillo, Gro", lat: 18.392194, lng: -99.502368 },
+  { nombre: "DAIG - Dos Arroyos, Gro", lat: 17.021298, lng: -99.650691 },
+  { nombre: "ZIIG - Zihuatanejo, Gro", lat: 17.606869, lng: -101.464499 },
+  { nombre: "CAIG - El Cayaco, Gro", lat: 17.048585, lng: -100.267253 },
+  { nombre: "MEIG - Mezcala, Gro", lat: 17.925167, lng: -99.619758 },
+  { nombre: "CRIG - Cruz Grande, Gro", lat: 16.736338, lng: -99.131171 },
+  { nombre: "MGIG - Malinaltepec, Gro", lat: 17.233614, lng: -98.633759 },
+  { nombre: "TLIG - Tlapa, Gro", lat: 17.562652, lng: -98.5665 },
+
+  // Oaxaca
+  { nombre: "PNIG - Pinotepa Nacional, Oax", lat: 16.3928, lng: -98.127372 },
+  { nombre: "PEIG - Puerto Escondido, Oax", lat: 15.998617, lng: -97.1472 },
+  { nombre: "HUIG - Huatulco, Oax", lat: 15.76922, lng: -96.10835 },
+  { nombre: "CMIG - Matías Romero, Oax", lat: 17.091, lng: -94.8838 },
+  { nombre: "OXIG - Oaxaca, Oax", lat: 17.072548, lng: -96.7329 },
+  { nombre: "TXIG - Tlaxiaco, Oax", lat: 17.253222, lng: -97.767667 },
+  { nombre: "YOIG - Yosondúa, Oax", lat: 16.856545, lng: -97.54565 },
+  { nombre: "FTIG - Fresnillo de Trujano, Oax", lat: 17.907928, lng: -98.132664 },
+
+  // Chiapas
+  { nombre: "CCIG - Comitán, Chis", lat: 16.2533, lng: -92.1300 },
+  { nombre: "CHIQ - Chiquihuite, Chis", lat: 15.1500, lng: -92.1200 },
+  { nombre: "PATR - Patria, Chis", lat: 15.1500, lng: -92.1000 },
+  { nombre: "PAVE - Pavencul, Chis", lat: 15.1500, lng: -92.0800 },
+  { nombre: "PCIG - Pijijiapan, Chis", lat: 15.6900, lng: -93.2200 },
+{ nombre: "LPIG - La Paz, BCS", lat: 24.1426, lng: -110.3128 },
+{ nombre: "SCIG - Sabancuy, Camp", lat: 18.9861, lng: -91.1725 },
+{ nombre: "TEIG - Tepich, Q.Roo", lat: 19.5000, lng: -88.7000 },
+{ nombre: "LVIG - Laguna Verde, Ver", lat: 19.7269, lng: -96.4106 },
+{ nombre: "TUIG - Tuzandepetl, Ver", lat: 18.4500, lng: -95.3167 },
+{ nombre: "MYIG - Mérida, Yuc", lat: 20.9674, lng: -89.5926 },
+{ nombre: "AVCS - Chisec, Alta Verapaz", lat: 15.8155, lng: -90.2766 },
+{ nombre: "CHIE - Esquipulas, Chiquimula", lat: 14.5599, lng: -89.3414 },
+{ nombre: "ESTQ - Tiquisate, Escuintla", lat: 14.1516, lng: -91.1941 },
+{ nombre: "CGC3 - INSIVUMEH, Guatemala", lat: 14.5873, lng: -90.5325 },
+{ nombre: "GUSP - San José Pinula, Guatemala", lat: 14.5520, lng: -90.3168 },
+{ nombre: "HUBA - Santa Cruz Barillas, Huehuetenango", lat: 15.8166, lng: -91.2945 },
+{ nombre: "HUCU - Cuilco, Huehuetenango", lat: 15.4078, lng: -91.9472 },
+{ nombre: "HUEH - Huehuetenango, Huehuetenango", lat: 15.3818, lng: -91.5025 },
+{ nombre: "IZAB - Puerto Barrios, Izabal", lat: 15.7300, lng: -88.5843 },
+{ nombre: "IZLV - Morales, Izabal", lat: 15.5606, lng: -88.9077 },
+{ nombre: "JAMO - Monjas, Jalapa", lat: 14.4956, lng: -89.8395 },
+{ nombre: "PETF - Flores, Petén", lat: 16.9163, lng: -89.8667 },
+{ nombre: "PETP - PETP", lat: 16.3268, lng: -89.4169 },
+{ nombre: "QCIX - Ixcán, Quiché", lat: 16.0034, lng: -90.7722 },
+{ nombre: "RETA - Retalhuleu, Retalhuleu", lat: 14.5246, lng: -91.6949 },
+{ nombre: "ARTIL - Artillería, El Salvador", lat: 13.8374, lng: -89.3651 },
+{ nombre: "CNCH - Conchagua, El Salvador", lat: 13.2763, lng: -87.8337 },
+{ nombre: "MTO3 - Montecristo, El Salvador", lat: 14.3989, lng: -89.3606 },
+{ nombre: "PSNO - Presa 5 de Noviembre, El Salvador", lat: 13.9859, lng: -88.7590 },
+{ nombre: "VSM2 - Volcán de San Miguel, El Salvador", lat: 13.4424, lng: -88.2733 },
+{ nombre: "ACOY - Acoyapa, Nicaragua", lat: 11.9680, lng: -85.1740 },
+{ nombre: "ALTA - Altagracia, Isla de Ometepe", lat: 11.5498, lng: -85.6008 },
+{ nombre: "APOY - Apoyeque, Nicaragua", lat: 12.1975, lng: -86.3253 },
+{ nombre: "APO3 - Volcán Apoyeque sitio 3", lat: 12.2723, lng: -86.3688 },
+{ nombre: "APO4 - Volcán Apoyeque sitio 4", lat: 12.2802, lng: -86.3298 },
+{ nombre: "APO5 - Volcán Apoyeque sitio 5", lat: 12.2387, lng: -86.3826 },
+{ nombre: "BBAP - BB Volcán Apoyeque", lat: 12.2217, lng: -86.2992 },
+{ nombre: "APOV - Volcán Apoyeque", lat: 12.2387, lng: -86.3536 },
+{ nombre: "MASN - Norte del Volcán Masaya", lat: 12.0245, lng: -86.1761 },
+{ nombre: "TELM - SMA Telcor Managua", lat: 12.1548, lng: -86.2739 },
+{ nombre: "ACIN - Acelerógrafo INETER", lat: 12.1468, lng: -86.2472 },
+{ nombre: "BLUE - Estación Bluefields", lat: 12.0052, lng: -83.7763 },
+{ nombre: "BOAC - INETER/GEOFON Boaco", lat: 12.4493, lng: -85.6659 },
+{ nombre: "BRAS - ENATREL Los Brasiles", lat: 12.1618, lng: -86.3437 },
+{ nombre: "INET - INETER", lat: 12.1489, lng: -86.2483 },
+{ nombre: "CNEG - AI SSO Volcán Cerro Negro", lat: 12.4944, lng: -86.7016 },
+{ nombre: "CERN - Estación Cerro Negro", lat: 12.5000, lng: -86.6985 },
+{ nombre: "CONC - Volcán Concepción, Ometepe", lat: 11.5642, lng: -85.6257 },
+{ nombre: "COPM - Copm Copaltepe", lat: 12.1800, lng: -86.5917 },
+{ nombre: "MAIZ - Isla del Maíz", lat: 12.7096, lng: -83.0449 },
+{ nombre: "TEGU - Tegucigalpa, Honduras", lat: 14.0723, lng: -87.1921 },
+{ nombre: "SPSH - San Pedro Sula, Honduras", lat: 15.5046, lng: -88.0250 },
+{ nombre: "LACE - La Ceiba, Honduras", lat: 15.7631, lng: -86.7870 },
+{ nombre: "CHOL - Choluteca, Honduras", lat: 13.3000, lng: -87.2000 },
+{ nombre: "JUTI - Juticalpa, Honduras", lat: 14.6667, lng: -86.2167 },
+{ nombre: "TRUJ - Trujillo, Honduras", lat: 15.9167, lng: -85.9500 },
+{ nombre: "YORO - Yoro, Honduras", lat: 15.1333, lng: -87.1333 },
+{ nombre: "DANA - Danlí, Honduras", lat: 14.0333, lng: -86.5833 },
+{ nombre: "OLAN - Olanchito, Honduras", lat: 15.4833, lng: -86.5833 },
+{ nombre: "COMA - Comayagua, Honduras", lat: 14.4500, lng: -87.6333 },
+{ nombre: "Las Alturas, Costa Rica", lat: 8.94981, lng: -82.83365 },
+{ nombre: "Cerro Uatsi, Costa Rica", lat: 9.62128, lng: -82.94004 },
+{ nombre: "Durika, Costa Rica", lat: 9.2624, lng: -83.2454 },
+{ nombre: "Tierra Guacimo, Costa Rica", lat: 10.21277, lng: -83.589685 },
+{ nombre: "Tierra Liberia, Costa Rica", lat: 10.645, lng: -85.5528 },
+{ nombre: "Fila Mora, Costa Rica", lat: 8.98983, lng: -83.35362 },
+{ nombre: "Isla del Coco 1, Costa Rica", lat: 5.543883, lng: -87.055099 },
+{ nombre: "Isla del Coco 2, Costa Rica", lat: 5.54345, lng: -87.05687 },
+{ nombre: "Volcán Irazú, Cartago", lat: 9.98, lng: -83.83683 },
+{ nombre: "Valle La Estrella, Costa Rica", lat: 9.762323, lng: -83.048592 },
+{ nombre: "Finca La Lucha, San José", lat: 9.7415, lng: -84.005333 },
+{ nombre: "Maravilla, Costa Rica", lat: 10.0195, lng: -85.425499 },
+{ nombre: "PIRO, Osa, Puntarenas", lat: 8.4109, lng: -83.319504 },
+{ nombre: "Península de Osa, Puntarenas", lat: 8.5367, lng: -83.302299 },
+{ nombre: "Quebrada, Costa Rica", lat: 9.431, lng: -84.164001 },
+{ nombre: "San Rafael, Volcán Turrialba, Cartago", lat: 9.958185, lng: -83.81121 },
+{ nombre: "GANDOCA, Costa Rica", lat: 9.5902, lng: -82.60739 },
+{ nombre: "San Jerónimo, Costa Rica", lat: 9.34595, lng: -83.50874 },
+{ nombre: "Centro Soltis 1, Costa Rica", lat: 10.383333, lng: -84.618446 },
+{ nombre: "Tacares, Grecia, Alajuela", lat: 10.0421, lng: -84.299797 },
+{ nombre: "Centro Soltis 2, Costa Rica", lat: 10.383, lng: -84.618 },
+{ nombre: "Colegio de Turrubares, San José", lat: 9.91383, lng: -84.44833 },
+{ nombre: "Linda Vista de Cariari, Costa Rica", lat: 10.598402, lng: -83.699265 },
+{ nombre: "Tortuguero, Costa Rica", lat: 10.55736, lng: -83.73526 },
+{ nombre: "Upala, Costa Rica", lat: 10.8972, lng: -85.012283 },
+{ nombre: "Veragua, Costa Rica", lat: 9.92656, lng: -83.19049 },
+{ nombre: "CHUS - Chusmiza, Chile", lat: -19.6685, lng: -69.1942 },
+{ nombre: "Adís Abeba, Etiopía", lat: 9.0292, lng: 38.7656 },
+{ nombre: "Adís Abeba 1, Etiopía", lat: 9.0292, lng: 38.7656 },
+{ nombre: "Adak, Alaska, EE. UU.", lat: 51.8823, lng: -176.6842 },
+{ nombre: "Afiamalu, Samoa", lat: -13.9085, lng: -171.7827 },
+{ nombre: "Albuquerque, Nuevo México, EE. UU.", lat: 34.9459, lng: -106.4572 },
+{ nombre: "Ankara, Turquía", lat: 39.8680, lng: 32.7934 },
+{ nombre: "St. George's, Bermudas", lat: 32.3713, lng: -64.6963 },
+{ nombre: "Bilibino, Rusia", lat: 68.0653, lng: 166.4531 },
+{ nombre: "Bogotá, Colombia", lat: 4.5869, lng: -74.0432 },
+{ nombre: "Casey, Antártida", lat: -66.2792, lng: 110.5354 },
+{ nombre: "Cueva de la Catedral, Misuri, EE. UU.", lat: 38.0557, lng: -91.2446 },
+{ nombre: "Chiang Mai, Tailandia", lat: 18.81401, lng: 98.94447 },
+{ nombre: "Puesto universitario, Alaska, EE. UU. (COLUMNA)", lat: 64.8993, lng: -147.7954 },
+{ nombre: "Puesto universitario, Alaska, EE. UU. (REAJUSTE SALARIAL)", lat: 64.8736, lng: -147.8616 },
+{ nombre: "Corvallis, Oregón, EE. UU.", lat: 44.5855, lng: -123.3046 },
+{ nombre: "CTAO (GSN IU / Geoscience Australia)", lat: -20.0882, lng: 146.2545 },
+{ nombre: "Davao, Filipinas", lat: 7.0697, lng: 125.5791 },
+{ nombre: "Reserva Natural Disney, Florida, EE. UU.", lat: 28.1103, lng: -81.4327 },
+{ nombre: "Funafuti, Tuvalu", lat: -8.5259, lng: 179.1966 },
+{ nombre: "Caibarién, Villa Clara", lat: 22.497055, lng: -79.47097 },
+{ nombre: "Camariocas, Cárdenas, Matanzas", lat: 23.061737, lng: -81.370857 },
+{ nombre: "Cascorrro, Camagüey", lat: 21.193399, lng: -77.417297 },
+{ nombre: "Chivirico, Guamá, Santiago de Cuba", lat: 19.97648, lng: -76.415131 },
+{ nombre: "Estación Central, Santiago de Cuba", lat: 20.03019, lng: -75.806709 },
+{ nombre: "Los Guineos, Baracoa, Guantánamo", lat: 20.3274, lng: -74.592934 },
+{ nombre: "Malones, Guantánamo", lat: 19.9583, lng: -75.059097 },
+{ nombre: "El Paraíso, Holguín", lat: 20.920046, lng: -76.236176 },
+{ nombre: "Las Mercedes, Granma", lat: 20.0646, lng: -77.004501 },
+{ nombre: "Mar Verde, Santiago de Cuba", lat: 20.005285, lng: -75.906555 },
+{ nombre: "Maisí, Guantánamo, Cuba", lat: 20.175501, lng: -74.231201 },
+{ nombre: "Manicaragua, Villa Clara, Cuba", lat: 22.1194, lng: -79.979599 },
+{ nombre: "Moa, Holguín, Cuba", lat: 20.6654, lng: -74.955002 },
+{ nombre: "Presa Nuevo Mundo, Moa, Holguín", lat: 20.559826, lng: -74.982674 },
+{ nombre: "El Mamey, Pilón, Granma", lat: 19.91395, lng: -77.408806 },
+{ nombre: "Pinares de Mayarí, Holguín, Cuba", lat: 20.4856, lng: -75.791603 },
+{ nombre: "Quimbuelo, San Antonio del Sur, Guantánamo", lat: 20.19887, lng: -74.811867 },
+{ nombre: "Río Carpintero, Santiago, Cuba", lat: 19.995001, lng: -75.696503 },
+{ nombre: "Sabaneta, Guantánamo, Cuba", lat: 20.362301, lng: -75.313599 },
+{ nombre: "Soroa, Artemisa, Cuba", lat: 22.7932, lng: -83.008598 },
+{ nombre: "Loma el Yarey, Jiguaní, Granma", lat: 20.357862, lng: -76.36306 },
+{ nombre: "Angol, Chile (AGCH)", lat: -37.809299, lng: -72.696602 },
+{ nombre: "Antumapu (ANTU)", lat: -33.569099, lng: -70.633499 },
+{ nombre: "Isla Mocha (BIO4)", lat: -38.412000, lng: -73.885300 },
+{ nombre: "Cauquenes, Chile (CAUQ)", lat: -35.969749, lng: -72.227409 },
+{ nombre: "Chillán (CCH2)", lat: -36.603001, lng: -72.077797 },
+{ nombre: "Concepción San Pedro (CCSP)", lat: -36.844200, lng: -72.711197 },
+{ nombre: "Cochrane (CHRN)", lat: -47.145700, lng: -72.752500 },
+{ nombre: "Copihue, Chile (Chue)", lat: -36.089630, lng: -71.978409 },
+{ nombre: "Cerro Calán, Chile (CL2C)", lat: -33.396099, lng: -70.536903 },
+{ nombre: "Cerro Calán (CLCH)", lat: -33.396198, lng: -70.536797 },
+{ nombre: "Cobquecura (COCHE)", lat: -36.131302, lng: -72.788399 },
+{ nombre: "Coyhaique, Chile (COYC)", lat: -45.572990, lng: -72.081390 },
+{ nombre: "FAR1", lat: -33.337700, lng: -70.299400 },
+{ nombre: "Falla de San Ramón (FSR)", lat: -33.478500, lng: -70.694000 },
+{ nombre: "Chusmiza, Chile (GOO1)", lat: -19.668500, lng: -69.194200 },
+{ nombre: "Mina Guanaco, Chile (GOO2)", lat: -25.162600, lng: -69.590400 },
+{ nombre: "Copiapó (Tierra Amarilla), Chile (GOO3)", lat: -27.593700, lng: -70.234700 },
+{ nombre: "Observatorio Tololo, Vicuña, Chile (GOO4)", lat: -30.172700, lng: -70.799300 },
+{ nombre: "Hualañé, Chile (GOO5)", lat: -35.009900, lng: -71.930300 },
+{ nombre: "Curarrehue (Paso Mamuil Malal), Chile (GOO6)", lat: -39.583900, lng: -71.472000 },
+{ nombre: "Cerro Milladeo, Quellón, Chile (GOO7)", lat: -43.114200, lng: -73.664400 },
+{ nombre: "Villa O'Higgins, Chile (GOO8)", lat: -48.464800, lng: -72.556600 },
+{ nombre: "Cerro Castillo, Chile (GOO9)", lat: -51.270699, lng: -72.338097 },
+{ nombre: "Punta Arenas, Chile (GO10)", lat: -53.154598, lng: -71.049797 },
+{ nombre: "Huinay, Chile (HUNY)", lat: -42.379002, lng: -72.4142 },
+{ nombre: "Valparaíso, Chile (IHA)", lat: -33.025799, lng: -71.641197 },
+{ nombre: "Colegio Las Américas, Santiago, Chile (LACH)", lat: -33.451778, lng: -70.530807 },
+{ nombre: "Laja, Chile (LAJA)", lat: -37.2809, lng: -72.112 },
+{ nombre: "LMEL", lat: -33.8476, lng: -70.2075 },
+{ nombre: "Linares, Chile (LNCH)", lat: -35.8475, lng: -71.601303 },
+{ nombre: "Los Niches, Curicó, Chile (NICH)", lat: -35.002583, lng: -71.229584 },
+{ nombre: "Peldehue, Chile (PEL1)", lat: -33.1436, lng: -70.674698 },
+{ nombre: "Red Sísmica Nacional de Chile (PSCH)", lat: -33.1436, lng: -70.674698 },
+{ nombre: "CSN (RCDM)", lat: -33.4892, lng: -70.8064 },
+{ nombre: "ROC1", lat: -32.9756, lng: -71.0156 },
+{ nombre: "San José de Maipo, Chile (SJCH)", lat: -33.640671, lng: -70.353798 },
+{ nombre: "Parque estatal Alum Creek, Ohio, EE. UU. (ACSO)", lat: 40.2319, lng: -82.9820 },
+{ nombre: "Refugio Nacional de Vida Silvestre Agassiz, Minnesota, EE. UU.", lat: 48.2977, lng: -95.8619 },
+{ nombre: "Criadero de Auburn, Idaho, EE. UU. (AHID)", lat: 42.7654, lng: -111.1004 },
+{ nombre: "Amarillo, Texas, EE. UU. (AMTX)", lat: 34.8837, lng: -101.6808 },
+{ nombre: "Binghamton, Nueva York, EE. UU. (BINY)", lat: 42.1993, lng: -75.9861 },
+{ nombre: "Blacksburg, Virginia, EE. UU. (BLA)", lat: 37.2113, lng: -80.4205 },
+{ nombre: "Battle Mountain, Nevada, EE. UU. (BMN)", lat: 40.4315, lng: -117.2218 },
+{ nombre: "Blue Mountains Array (Baker), Oregón, EE. UU. (BMO)", lat: 44.8525, lng: -117.3060 },
+{ nombre: "Bozeman, Montana, EE. UU. (BOZ)", lat: 45.5970, lng: -111.6297 },
+{ nombre: "Brewton, Alabama, EE. UU. (BRAL)", lat: 31.1687, lng: -87.0506 },
+{ nombre: "Sitio 6 del Conjunto Boulder, Wyoming, EE. UU. (BWO6)", lat: 42.7667, lng: -109.5583 },
+{ nombre: "Cedar Bluff, Kansas, EE. UU. (CBKS)", lat: 38.8140, lng: -99.7374 },
+{ nombre: "Caribú, Maine, EE. UU. (CBM)", lat: 46.9325, lng: -68.1208 },
+{ nombre: "Corbin (Observatorio de Fredericksburg), Virginia, EE. UU.", lat: 38.2046, lng: -77.3732 },
+{ nombre: "Cueva de la Catedral, Misuri, EE. UU. (CCM)", lat: 38.0557, lng: -91.2446 },
+{ nombre: "Chapel Hill, Carolina del Norte, EE. UU. (CEH)", lat: 35.8908, lng: -79.0928 },
+{ nombre: "Columbia College, California, EE. UU. (CMB)", lat: 38.0350, lng: -120.3850 },
+{ nombre: "Anacostia del Museo, Carolina del Norte, EE. UU. (CMH2)", lat: 35.9983, lng: -77.0081 },
+{ nombre: "Acantilados del Neuse, Carolina del Norte, EE. UU. (CNNC)", lat: 35.2393, lng: -77.8901 },
+{ nombre: "Conover, Wisconsin, EE. UU. (COWI)", lat: 46.1003, lng: -89.1369 },
+{ nombre: "Dagmar, Montana, EE. UU. (Dirección General de Transporte)", lat: 48.4702, lng: -104.1959 },
+{ nombre: "Dugway, condado de Tooele, Utah, EE. UU. (TETA)", lat: 40.1950, lng: -112.8133 },
+{ nombre: "Centro de datos EROS, Sioux Falls, Dakota del Sur, EE. UU. (ECSD)", lat: 43.7337, lng: -96.6141 },
+{ nombre: "Águila, Alaska central, Alaska, EE. UU. (EGAK)", lat: 64.7774, lng: -141.1581 },
+{ nombre: "Eagleton, Montana, EE. UU. (EGMT)", lat: 48.0240, lng: -109.7547 },
+{ nombre: "Elko, Nevada, EE. UU. (ALCE)", lat: 40.7448, lng: -115.2388 },
+{ nombre: "Erie, Pensilvania, EE. UU. (ERPA)", lat: 42.1175, lng: -79.9891 },
+{ nombre: "Ely, Minnesota, EE. UU. (EYMN)", lat: 47.9462, lng: -91.4953 },
+{ nombre: "Grayling, Michigan, EE. UU. (GLMI)", lat: 44.8245, lng: -84.6175 },
+{ nombre: "Godfrey, Georgia, EE. UU. (GOGA)", lat: 33.41476, lng: -83.47327 },
+{ nombre: "Golden (Bergen Park), Colorado, EE. UU. (GOL)", lat: 39.700279, lng: -105.371109 },
+{ nombre: "Greenwood, Delaware, EE. UU. (GWDE)", lat: 38.8256, lng: -75.6171 },
+{ nombre: "Hanford, Washington, EE. UU. (HAWA)", lat: 46.3925, lng: -119.5327 },
+{ nombre: "Hopedale, Illinois, EE. UU. (HDIL)", lat: 40.5559, lng: -89.2940 },
+{ nombre: "Hailey, Idaho, EE. UU. (Identificador de alto nivel)", lat: 43.5625, lng: -114.4138 },
+{ nombre: "Rancho Hardware, condado de Cache, Utah, EE. UU. (HWUT)", lat: 41.6069, lng: -111.5652 },
+{ nombre: "Idaho Springs, Colorado, EE. UU. (CIUO)", lat: 39.7997, lng: -105.6134 },
+{ nombre: "Junction, Texas, EE. UU. (JCT)", lat: 30.4794, lng: -99.8022 },
+{ nombre: "Bowden y Sunny Slope Rds, Wisconsin, EE. UU. (JFWS)", lat: 42.9142, lng: -90.2481 },
+{ nombre: "Kanab, Utah, EE. UU. (KNB)", lat: 37.0166, lng: -112.8224 },
+{ nombre: "Universidad Estatal de Kansas, Konza Prairie, EE. UU. (KSU1)", lat: 39.1009, lng: -96.6094 },
+{ nombre: "Kingsville, Texas, EE. UU. (KVTX)", lat: 27.5459, lng: -97.8929 },
+{ nombre: "Matriz LASA, Montana, EE. UU. (LAO)", lat: 46.6885, lng: -106.2231 },
+{ nombre: "Lisboa, Nuevo Hampshire, EE. UU. (LBNH)", lat: 44.2401, lng: -71.9259 },
+{ nombre: "Lago Yellowstone, Wyoming, EE. UU. (LKWY)", lat: 44.5652, lng: -110.4 },
+{ nombre: "Lago Ozonia, Nueva York, EE. UU. (LONY)", lat: 44.6197, lng: -74.5828 },
+{ nombre: "Retiro Vista al Lago, Alabama, EE. UU. (LRAL)", lat: 33.0399, lng: -86.9978 },
+{ nombre: "Lakeside, Connecticut, EE. UU. (LSCT)", lat: 41.6784, lng: -73.2244 },
+{ nombre: "Lajitas, Texas, EE. UU. (LTX)", lat: 29.3339, lng: -103.6669 },
+{ nombre: "Mont Chateau, Virginia Occidental, EE. UU. (MCWV)", lat: 39.6581, lng: -79.8456 },
+{ nombre: "Monte Ida, Arkansas, EE. UU. (MIAR)", lat: 34.5454, lng: -93.5765 },
+{ nombre: "Montañas Cornudas, Texas, EE. UU. (MNTX)", lat: 31.6985, lng: -105.3821 },
+{ nombre: "Mina, Nevada, EE. UU. (MNV)", lat: 38.4328, lng: -118.1531 },
+{ nombre: "Missoula, Montana, EE. UU. (MSO)", lat: 46.8292, lng: -113.9406 },
+{ nombre: "Mesa Verde, Colorado, EE. UU.", lat: 37.19956, lng: -108.49251 },
+{ nombre: "Murphy, Carolina del Norte, EE. UU. (MYNC)", lat: 35.0739, lng: -84.1279 },
+{ nombre: "Nacogdoches, Texas, EE. UU. (NATX)", lat: 31.7598, lng: -94.661 },
+{ nombre: "Newcomb, Nueva York, EE. UU. (NCB)", lat: 43.9708, lng: -74.2236 },
+{ nombre: "Newport, Washington, EE. UU. (NUEVO)", lat: 48.2642, lng: -117.1227 },
+{ nombre: "Nueva Esperanza, Carolina del Sur, EE. UU.", lat: 33.1067, lng: -80.1778 },
+{ nombre: "Mirador de Neilton, Washington, EE. UU.", lat: 47.3917, lng: -123.8691 },
+{ nombre: "Montaña del Pulpo, Washington, EE. UU.", lat: 47.7489, lng: -124.1781 },
+{ nombre: "Ogallala, Nebraska, EE. UU.", lat: 40.9451, lng: -102.0330 },
+{ nombre: "Oxford, Misisipi, EE. UU.", lat: 34.5118, lng: -89.4092 },
+{ nombre: "Parque estatal Peaks-Kenny, Maine, EE. UU.", lat: 45.2644, lng: -69.2917 },
+{ nombre: "Red Top Meadow, Wyoming, EE. UU.", lat: 43.3624, lng: -110.8518 },
+{ nombre: "Red Lodge, Montana, EE. UU.", lat: 45.1221, lng: -109.2673 },
+{ nombre: "Adirondack, Nueva York, EE. UU.", lat: 44.5483, lng: -74.5300 },
+{ nombre: "Black Hills, Dakota del Sur, EE. UU.", lat: 44.1204, lng: -104.0362 },
+{ nombre: "Observatorio Geológico de San Andrés, California, EE. UU.", lat: 36.7650, lng: -121.4450 },
+{ nombre: "Centro estatal, Iowa, EE. UU.", lat: 41.9069, lng: -93.2153 },
+{ nombre: "Parque Nacional de las Grandes Dunas de Arena, Colorado, EE. UU.", lat: 37.7456, lng: -105.5012 },
+{ nombre: "Manantial Topopah, Nevada, EE. UU.", lat: 36.9488, lng: -116.2495 },
+{ nombre: "Tazewell, Tennessee, EE. UU.", lat: 36.5439, lng: -83.5490 },
+{ nombre: "Vicksburg, Misisipi, EE. UU.", lat: 32.2185, lng: -90.5177 },
+{ nombre: "Cueva Wyandotte, Indiana, EE. UU.", lat: 38.2290, lng: -86.2938 },
+{ nombre: "Presa Whiskeytown, California, EE. UU.", lat: 40.5800, lng: -122.5397 },
+{ nombre: "Montañas de Wichita, Oklahoma, EE. UU.", lat: 34.7379, lng: -98.7807 },
+{ nombre: "ALCE", lat: -0.4548, lng: -90.9701 },
+{ nombre: "HORMIGAS", lat: -0.4973, lng: -78.170403 },
+{ nombre: "ARNL", lat: -3.5478, lng: -80.067001 },
+{ nombre: "BOSC", lat: -3.1512, lng: -78.495102 },
+{ nombre: "CASC", lat: 0.1368, lng: -77.328 },
+{ nombre: "CHSH", lat: -1.49385, lng: -78.869331 },
+{ nombre: "COHC", lat: -2.4661, lng: -79.257401 },
+{ nombre: "CUIC", lat: 0.304, lng: -78.361 },
+{ nombre: "FLF1", lat: -0.35743, lng: -79.84268 },
+{ nombre: "GGPC", lat: -0.1804, lng: -78.593697 },
+{ nombre: "IMBA", lat: 0.2764, lng: -78.199097 },
+{ nombre: "MCRA", lat: -4.3697, lng: -79.954399 },
+{ nombre: "MILO", lat: -2.1848, lng: -79.5557 },
+{ nombre: "PUERTO", lat: -1.4633, lng: -78.773102 },
+{ nombre: "PULU", lat: 0.0218, lng: -78.502197 },
+{ nombre: "PUYO", lat: -1.493, lng: -78.024902 },
+{ nombre: "SAGÚ", lat: -1.1529, lng: -78.665001 },
+{ nombre: "SALIDA", lat: -2.1863, lng: -80.991203 },
+{ nombre: "SLOR", lat: -0.729811, lng: -78.496742 },
+{ nombre: "SN02", lat: -0.80448, lng: -91.08802 },
+{ nombre: "SN06", lat: -0.83914, lng: -91.168556 },
+{ nombre: "SN09", lat: -0.85039, lng: -91.04528 },
+{ nombre: "SN10", lat: -0.81298, lng: -90.973549 },
+{ nombre: "SNLR", lat: 1.2926, lng: -78.8471 },
+{ nombre: "TULM", lat: 0.7161, lng: -77.786903 },
+{ nombre: "VCES", lat: -0.79991, lng: -78.39444 },
+{ nombre: "ZUMB", lat: -4.8637, lng: -79.143898 },
+{ nombre: "Aguas Belas, PE", lat: -9.03868, lng: -37.045358 },
+{ nombre: "Araguaiana, MT", lat: -15.706, lng: -51.812 },
+{ nombre: "Boa Vista, RR", lat: 2.3953, lng: -60.5225 },
+{ nombre: "Cruzeiro do Sul, AC", lat: -7.7299, lng: -72.7049 },
+{ nombre: "Extrema, RO", lat: -9.81684, lng: -66.21368 },
+{ nombre: "Guajara-Mirim, RO", lat: -10.752653, lng: -65.301 },
+{ nombre: "Ipaneri, GO", lat: -17.982956, lng: -48.211734 },
+{ nombre: "Itaituba, PA", lat: -4.3672, lng: -55.7343 },
+{ nombre: "Janeiro, MG", lat: -15.058097, lng: -44.311197 },
+{ nombre: "Lábrea, AM", lat: -9.3166, lng: -65.6758 },
+{ nombre: "Manacapuru, AM", lat: -3.1615, lng: -60.6838 },
+{ nombre: "Monte Alegre, PA", lat: -2.0184, lng: -54.1807 },
+{ nombre: "Monte Alegre (alternativa), PA", lat: -1.8529, lng: -54.2649 },
+{ nombre: "Montes Claros, MG", lat: -16.7044, lng: -43.94167 },
+{ nombre: "Macapá, AP", lat: -0.3602, lng: -52.0567 },
+{ nombre: "Novo Progresso, PA", lat: -7.0454, lng: -55.3579 },
+{ nombre: "Natividade, TO", lat: -11.7105, lng: -47.68007 },
+{ nombre: "Porto dos Gaúchos, MT", lat: -11.612297, lng: -56.729597 },
+{ nombre: "Parauapebas, PA", lat: -6.1724, lng: -49.815 },
+{ nombre: "Pontes e Lacerda, MT", lat: -15.44874, lng: -59.13676 },
+{ nombre: "Rosário, MA", lat: -2.8967, lng: -44.1246 },
+{ nombre: "Santo Antônio do Leverger, MT", lat: -15.90118, lng: -55.69356 },
+{ nombre: "São Desidério, BA", lat: -12.4085, lng: -44.903 },
+{ nombre: "São Gabriel da Cachoeira, AM", lat: -0.1514, lng: -66.9776 },
+{ nombre: "São Gabriel da Cachoeira (alternativa), AM", lat: -0.1223, lng: -67.0306 },
+{ nombre: "Santa Maria do Tocantins, TO", lat: -8.8617, lng: -47.5886 },
+{ nombre: "Serra Nova Dourada, MT", lat: -11.9742, lng: -51.2943 },
+{ nombre: "Tabatinga, AM", lat: -4.1868, lng: -69.909 },
+{ nombre: "Tefé, AM", lat: -3.50905, lng: -64.6347 },
+{ nombre: "Tomé-Açu, PA", lat: -2.3704, lng: -48.0957 },
+{ nombre: "Vilhena, RO", lat: -12.9528, lng: -60.2002 },
+{ nombre: "Baul - Cojedes (BAUV)", lat: 8.9433, lng: -68.041496 },
+{ nombre: "Belén - Carabobo (BENV)", lat: 9.9623, lng: -67.59876 },
+{ nombre: "Birongo - Miranda (BIRV)", lat: 10.4757, lng: -66.269203 },
+{ nombre: "Caicara - Bolívar (CACV)", lat: 7.50108, lng: -65.99261 },
+{ nombre: "Caicara - Bolívar (CAIV)", lat: 7.3262, lng: -66.321602 },
+{ nombre: "Capacho - Táchira (CAPV)", lat: 7.8649, lng: -72.314301 },
+{ nombre: "Carúpano - Sucre (CRUV)", lat: 10.6165, lng: -63.1842 },
+{ nombre: "Cumanacoa - Sucre (CUNV)", lat: 10.1777, lng: -64.0000 },
+{ nombre: "Cupira - Miranda", lat: 10.0639, lng: -65.805603 },
+{ nombre: "Curarigua - Lara (CURVA)", lat: 10.0128, lng: -69.961098 },
+{ nombre: "Dabajuro - Falcón (DABV)", lat: 10.9219, lng: -70.6362 },
+{ nombre: "Elorza - Apure (ELOV)", lat: 7.0011, lng: -69.4832 },
+{ nombre: "FUNVISIS - El Llanito, Miranda (FUNV)", lat: 10.4693, lng: -66.8102 },
+{ nombre: "Guiria - Sucre (GUIV)", lat: 10.6377, lng: -62.208199 },
+{ nombre: "Guanoco - Sucre (GUNV)", lat: 10.1449, lng: -62.9426 },
+{ nombre: "Guri - Bolívar (GURV)", lat: 7.7598, lng: -63.0854 },
+{ nombre: "Isla La Blanquilla (IBAV)", lat: 11.8216, lng: -64.597702 },
+{ nombre: "Isla Los Monjes (LMOV)", lat: 12.4, lng: -70.800003 },
+{ nombre: "Isla Los Testigos (ITEV)", lat: 11.3552, lng: -63.132 },
+{ nombre: "Jacura - Falcón (JACV)", lat: 11.0873, lng: -68.82987 },
+{ nombre: "Luepa - Bolívar (LUEV)", lat: 5.8433, lng: -61.4613 },
+{ nombre: "Macarao - Nueva Esparta (MACV)", lat: 10.9767, lng: -64.1782 },
+{ nombre: "Machiques - Zulia", lat: 10.04997, lng: -72.53493 },
+{ nombre: "Las Mercedes - Guárico (MERV)", lat: 9.2617, lng: -66.297203 },
+{ nombre: "Monte Cano - Falcón (MONV)", lat: 11.955, lng: -69.970497 },
+{ nombre: "La Orchila (ORCV)", lat: 11.8124, lng: -66.193703 },
+{ nombre: "Oritupano (ORIV)", lat: 9.0696, lng: -63.417999 },
+{ nombre: "Pariaguán - Anzoátegui (PARV)", lat: 8.9653, lng: -64.795601 },
+{ nombre: "Puerto Ayacucho - Amazonas (PAYV)", lat: 5.4205, lng: -67.656097 },
+{ nombre: "Puerto La Cruz - Anzoátegui (PCRV)", lat: 10.1633, lng: -64.58962 },
+{ nombre: "Puerto La Cruz - Anzoátegui (PLT)", lat: 10.1633, lng: -64.589699 },
+{ nombre: "Pto. Ayacucho - Amazonas (PTAV)", lat: 5.4204, lng: -67.656197 },
+{ nombre: "Qda. Arriba (QARV)", lat: 10.2061, lng: -70.523399 },
+{ nombre: "Rio Grande - Bolívar (RIOV)", lat: 8.0690, lng: -61.814499 },
+{ nombre: "Sanarito - Lara (SANV)", lat: 9.5010, lng: -69.536499 },
+{ nombre: "Santo Domingo - Mérida (SDV)", lat: 8.8863, lng: -70.625999 },
+{ nombre: "Siquisique - Falcón (SIQV)", lat: 10.6489, lng: -69.807899 },
+{ nombre: "Socopó - Táchira (SOCV)", lat: 8.2842, lng: -70.856598 },
+{ nombre: "Tacata - Miranda (Vehículo táctico)", lat: 10.13811, lng: -67.0267 },
+{ nombre: "Terepaima - Lara (TERV)", lat: 9.9638, lng: -69.19181 },
+{ nombre: "El Llanito - Miranda (PRUEBA)", lat: 10.4692, lng: -66.810204 },
+{ nombre: "Tinaquillo - Cojedes (TINV)", lat: 10.2000, lng: -68.199997 },
+{ nombre: "Tocomita - Bolívar (TOCV)", lat: 7.7598, lng: -63.085098 },
+{ nombre: "Turiamo - Carabobo (TURV)", lat: 10.44952, lng: -67.83947 },
+{ nombre: "El Vigía - Mérida (VIGV)", lat: 8.8401, lng: -71.364197 },
+{ nombre: "Villa del Rosario - Zulia (VIRV)", lat: 10.5030, lng: -72.406097 },
+{ nombre: "Cariaco - Sucre (XCAR)", lat: 10.4929, lng: -63.5537 },
+{ nombre: "Yaguaraparo - Sucre (XYAG)", lat: 10.5686, lng: -62.8270 },
+{ nombre: "Anbu (ANPB)", lat: 25.1828, lng: 121.529198 },
+{ nombre: "Ching-ging (CHGB)", lat: 24.0602, lng: 121.174004 },
+{ nombre: "Houtzshan (HGSD)", lat: 23.4921, lng: 121.423897 },
+{ nombre: "Hualién (HWAB)", lat: 23.9770, lng: 121.605003 },
+{ nombre: "Parientes (KMNB)", lat: 24.4638, lng: 118.3882 },
+{ nombre: "Lanyu (LYUB)", lat: 22.001699, lng: 121.584 },
+{ nombre: "Matsu (MATB)", lat: 26.151501, lng: 119.945602 },
+{ nombre: "Ninganchiao (NACB)", lat: 24.1738, lng: 121.5947 },
+{ nombre: "Penghu (PHUB)", lat: 23.5114, lng: 119.580101 },
+{ nombre: "Erlín (RLNB)", lat: 23.8911, lng: 120.359398 },
+{ nombre: "Suanglung (SSLB)", lat: 23.7876, lng: 120.954 },
+{ nombre: "TAI-PEI (TATO)", lat: 24.975401, lng: 121.488098 },
+{ nombre: "Techi (TDCB)", lat: 24.252701, lng: 121.158302 },
+{ nombre: "Dapu (TPUB)", lat: 23.3005, lng: 120.6296 },
+{ nombre: "Taitung (TWGB)", lat: 22.8177, lng: 121.0799 },
+{ nombre: "Kenting (TWKB)", lat: 21.940901, lng: 120.8125 },
+{ nombre: "Isla Dongsha (VDOS)", lat: 20.701, lng: 116.730598 },
+{ nombre: "Islas Nansha (VNAS)", lat: 10.3774, lng: 114.364998 },
+{ nombre: "Wufenshan (WFSB)", lat: 25.071501, lng: 121.781601 },
+{ nombre: "Yeheng (YHNB)", lat: 24.6695, lng: 121.3757 },
+{ nombre: "Yuli (YULB)", lat: 23.3925, lng: 121.2971 },
+{ nombre: "ACATE", lat: 37.02398, lng: 14.50064 },
+{ nombre: "ACER", lat: 40.7867, lng: 15.9427 },
+{ nombre: "AGLI", lat: 41.1269, lng: 9.1733 },
+{ nombre: "AGST", lat: 37.26552, lng: 15.22713 },
+{ nombre: "Antillo, Italia", lat: 37.9712, lng: 15.233 },
+{ nombre: "ALIJA", lat: 37.74897, lng: 13.75373 },
+{ nombre: "AMUR", lat: 40.9071, lng: 16.6041 },
+{ nombre: "Monte Conero", lat: 43.55017, lng: 13.602 },
+{ nombre: "APEC", lat: 43.55846, lng: 12.41991 },
+{ nombre: "APPI", lat: 46.47868, lng: 11.22813 },
+{ nombre: "Apricena (FG)", lat: 41.5738, lng: 15.54308 },
+{ nombre: "AQT1", lat: 42.77383, lng: 13.2935 },
+{ nombre: "L'Aquila, Italia", lat: 42.354, lng: 13.405 },
+{ nombre: "ARCI", lat: 42.8519, lng: 11.4754 },
+{ nombre: "ARRO", lat: 42.57917, lng: 12.76567 },
+{ nombre: "ARCEVIA 2", lat: 43.49807, lng: 12.94153 },
+{ nombre: "ASCOL", lat: 42.851223, lng: 13.58969 },
+{ nombre: "ASOL", lat: 45.8003, lng: 11.9023 },
+{ nombre: "ASQU", lat: 43.7967, lng: 11.7893 },
+{ nombre: "Asis", lat: 43.06298, lng: 12.65175 },
+{ nombre: "Asis San Benedicto", lat: 43.0426, lng: 12.6587 },
+{ nombre: "AVT - Sierra de Burano", lat: 43.47571, lng: 12.54828 },
+{ nombre: "Cantón", lat: 43.56589, lng: 12.26614 },
+{ nombre: "AVT - Casa Castalda", lat: 43.18154, lng: 12.63994 },
+{ nombre: "Monte Foce - Gubbio", lat: 43.3666, lng: 12.5715 },
+{ nombre: "AVT - Montelovesco", lat: 43.31516, lng: 12.40726 },
+{ nombre: "Monte Cedrone", lat: 43.44685, lng: 12.1928 },
+{ nombre: "AVT - Monte Miggiano", lat: 43.33419, lng: 12.26801 },
+{ nombre: "ANTENA", lat: 38.15948, lng: 15.46472 },
+{ nombre: "Poggio Castellaccio", lat: 43.4807, lng: 12.457 },
+{ nombre: "Pietralunga - Superficie de aire", lat: 43.45068, lng: 12.40222 },
+{ nombre: "Renzetti", lat: 43.54615, lng: 12.2639 },
+{ nombre: "Scheggia (ATSC)", lat: 43.424, lng: 12.68641 },
+{ nombre: "AVT - Monte Tezio", lat: 43.1979, lng: 12.3536 },
+{ nombre: "AVT - Monte Valcinella (ATVA)", lat: 43.2786, lng: 12.28531 },
+{ nombre: "AVT - Monte Valentino (ATVO)", lat: 43.38211, lng: 12.40663 },
+{ nombre: "Badiali (BADI)", lat: 43.50967, lng: 12.24433 },
+{ nombre: "Bagolino (BOLSA8)", lat: 45.8228, lng: 10.4664 },
+{ nombre: "Barbarano (BARO)", lat: 42.24795, lng: 12.05123 },
+{ nombre: "Básico", lat: 38.06703, lng: 15.068847 },
+{ nombre: "Lucca (BDI)", lat: 44.0628, lng: 10.5956 },
+{ nombre: "Camporeale - Ariano Irpino", lat: 41.998899, lng: 15.132629 },
+{ nombre: "Bellaria (BILA)", lat: 44.14294, lng: 12.47033 },
+{ nombre: "Bobbio (CHELIN)", lat: 44.76792, lng: 9.44782 },
+{ nombre: "Bormio", lat: 46.4694, lng: 10.3764 },
+{ nombre: "Borco San Lorenzo (BOSL)", lat: 43.93096, lng: 11.374336 },
+{ nombre: "Botticino Mattina (BOTM)", lat: 45.5416, lng: 10.3213 },
+{ nombre: "Botticino", lat: 45.5494, lng: 10.3095 },
+{ nombre: "Bozzolo (BOZZ)", lat: 45.1071, lng: 10.482 },
+{ nombre: "Bressanona (BRES)", lat: 46.69868, lng: 11.7341 },
+{ nombre: "Briatico (BRICA)", lat: 38.72384, lng: 16.02905 },
+{ nombre: "Brisichella (BRIS)", lat: 44.22454, lng: 11.76657 },
+{ nombre: "Bormio (BRMO)", lat: 46.47616, lng: 10.37218 },
+{ nombre: "Barisano (BRSN)", lat: 44.28418, lng: 12.08023 },
+{ nombre: "Busso (BSSO)", lat: 41.5461, lng: 14.5938 },
+{ nombre: "Camerota - Bulgaria (BULG)", lat: 40.0783, lng: 15.3776 },
+{ nombre: "Bultei - Sa Pruna (BULT)", lat: 40.5092, lng: 9.0397 },
+{ nombre: "Pozzuoli - Academia Aeronáutica (CAAM)", lat: 40.820065, lng: 14.142049 },
+{ nombre: "Capodarco (CADA)", lat: 43.1942, lng: 13.7614 },
+{ nombre: "Capriano del Colle (CAD)", lat: 45.455464, lng: 10.128662 },
+{ nombre: "Carife (CAFETERÍA)", lat: 41.028, lng: 15.2366 },
+{ nombre: "Castiglion Fiorentino (CAFI)", lat: 43.3292, lng: 11.9663 },
+{ nombre: "Arco Feliz (CAFL)", lat: 40.8439, lng: 14.0935 },
+{ nombre: "Castillo Frentano (CAFR)", lat: 42.2273, lng: 14.347 },
+{ nombre: "Caggiano (CAGC)", lat: 40.5573, lng: 15.1514 },
+{ nombre: "Agira", lat: 37.622, lng: 14.0000 },
+{ nombre: "Alto Alegre, RS (ALCR)", lat: -28.7981, lng: -53.028 },
+{ nombre: "Amambai, MS (AMBA)", lat: -22.92694, lng: -54.9905 },
+{ nombre: "Antonio João, MS (ANTJ)", lat: -21.9999, lng: -56.0046 },
+{ nombre: "Arapey, Uruguay (ARAP)", lat: -30.9463, lng: -57.5246 },
+{ nombre: "Azaras, Argentina (AZCA)", lat: -28.0799, lng: -55.9832 },
+{ nombre: "La Banda, Bolivia (BBLB)", lat: -18.66518, lng: -58.79955 },
+{ nombre: "Puerto Suárez, Bolivia (BBPS)", lat: -19.06957, lng: -57.84347 },
+{ nombre: "Roboré, Bolivia (BBRB)", lat: -18.27796, lng: -59.80869 },
+{ nombre: "Rincón del Tigre, Bolivia (BBRT)", lat: -18.2007, lng: -58.21108 },
+{ nombre: "Sierra de San Diablo, Bolivia (BBSD)", lat: -17.18752, lng: -60.60987 },
+{ nombre: "Bodoquena, MS (BDQN)", lat: -20.4487, lng: -56.7497 },
+{ nombre: "Cáceres, MT (CCRS)", lat: -17.28816, lng: -57.89928 },
+{ nombre: "Crissiumal, RS (CRSM)", lat: -27.49373, lng: -54.0433 },
+{ nombre: "Doverlandia, CO (DVD)", lat: -16.63737, lng: -52.16461 },
+{ nombre: "EDMA, Argentina (EDMB)", lat: -26.3635, lng: -54.4305 },
+{ nombre: "Espinillo Formosa, Argentina (ESFA)", lat: -24.9575, lng: -58.4883 },
+{ nombre: "Filadelfia, Paraguay (FDPY)", lat: -22.27697, lng: -59.94391 },
+{ nombre: "Francisco Beltrão, PR (FRBT)", lat: -25.975008, lng: -53.06258 },
+{ nombre: "Rio Negro, Uruguay (LEDA)", lat: -32.834, lng: -57.733 },
+{ nombre: "Madrejón, Paraguay (MAPY)", lat: -20.63692, lng: -59.88361 },
+{ nombre: "Mariscal Cándido Rondón, PR (MCR1)", lat: -24.4591, lng: -54.0367 },
+{ nombre: "Mercedes, Argentina (MECA)", lat: -29.29687, lng: -58.17347 },
+{ nombre: "Porto Murtinho, MS (Muro)", lat: -21.6592, lng: -57.61 },
+{ nombre: "Nobres, MT (NBRS)", lat: -14.32244, lng: -55.77729 },
+{ nombre: "Maldonado, Uruguay (OGAYU)", lat: -34.333, lng: -54.7123 },
+{ nombre: "Pantanal, Corumbá, MS (JADEAR)", lat: -18.9893, lng: -56.6168 },
+{ nombre: "Pozo Azul, Paraguay (PAPI)", lat: -24.08794, lng: -58.22915 },
+{ nombre: "Pocone, MT (POCN)", lat: -16.6213, lng: -56.73435 },
+{ nombre: "Palomas, Salto, Uruguay (PSAL)", lat: -31.0824, lng: -57.6077 },
+{ nombre: "Porto Estrela, MT (PTET)", lat: -15.37953, lng: -57.161 },
+{ nombre: "Río Branco, Uruguay (LCR)", lat: -32.606, lng: -53.406 },
+{ nombre: "Rosario del Sur, RS (VARILLAS)", lat: -30.3481, lng: -55.1976 },
+{ nombre: "Santa Teresa, Uruguay (ROST)", lat: -34.001, lng: -53.554 },
+{ nombre: "Ribas do Rio Pardo, MS (RPRD)", lat: -20.48078, lng: -53.70078 },
+{ nombre: "Río Verde, MS (RVDE)", lat: -19.0286, lng: -54.9389 },
+{ nombre: "San Cayetano, Corrientes, Argentina (SCCA)", lat: -27.56933, lng: -58.63556 },
+{ nombre: "San Joaquín, Paraguay (SJPY)", lat: -24.99722, lng: -56.10375 },
+{ nombre: "Tacuarembó, Uruguay (TBOT)", lat: -31.6827, lng: -55.9373 },
+{ nombre: "Tres Isletas, Corrientes, Argentina (TICA)", lat: -26.3886, lng: -60.38276 },
+{ nombre: "Unistalda, RS (UNIS)", lat: -29.0682, lng: -55.0719 },
+{ nombre: "Villa Ángel, Chaco, Argentina (VACANTE)", lat: -27.63932, lng: -60.70322 },
+{ nombre: "Vila Bela da Santíssima Trindade, MT (VBST)", lat: -14.532972, lng: -60.015258 },
+{ nombre: "Villa Sara, Uruguay (VSTT)", lat: -33.262, lng: -54.487 },
+{ nombre: "El Algarrobal, Ilo, Moquegua (ALGA)", lat: -17.6238, lng: -71.2719 },
+{ nombre: "Andaymarca, Tayacaja, Huancavelica (ANMA)", lat: -13.9363, lng: -75.3534 },
+{ nombre: "Atico, Caravelli, Arequipa (ÁTICO)", lat: -16.2313, lng: -73.6972 },
+{ nombre: "Camaná, Arequipa (CAMA)", lat: -16.499, lng: -73.009 },
+{ nombre: "Huancano, Pisco, Ica (CANO)", lat: -13.6042, lng: -75.6133 },
+{ nombre: "Huancarqui, Castilla, Arequipa (CARQ)", lat: -16.0985, lng: -72.199 },
+{ nombre: "Catahuasi, Yauyos, Lima (CATÁLOGO)", lat: -12.7908, lng: -75.8841 },
+{ nombre: "Chincha Alta, Ica (CHÍA)", lat: -13.2757, lng: -76.1272 },
+{ nombre: "Cotahuasi, Unión, Arequipa (COTA)", lat: -15.2022, lng: -72.8875 },
+{ nombre: "Coyungo, Changuillo, Nazca (COYN)", lat: -14.7696, lng: -75.3595 },
+{ nombre: "Caravelí, Atico (CRVP)", lat: -15.7629, lng: -73.3723 },
+{ nombre: "Caravelí, Atico (CRVP2)", lat: -15.7466, lng: -73.3658 },
+{ nombre: "Laguna Grande, Paracas, Ica (LECTURA)", lat: -14.1455, lng: -76.2736 },
+{ nombre: "Punta Lomitas, Reserva Nacional, Ica (LOMI)", lat: -14.715, lng: -75.8508 },
+{ nombre: "Ocucaje, Santiago, Ica (OCUC)", lat: -14.33, lng: -75.6819 },
+{ nombre: "Pampa Galeras, Nazca (PAMP)", lat: -14.6122, lng: -74.4234 },
+{ nombre: "Palca, Yauca (PLCA)", lat: -15.2248, lng: -74.2299 },
+{ nombre: "Pucusana, Lima (PUCU)", lat: -12.4608, lng: -76.7708 },
+{ nombre: "Pueblo Viejo, Ocoña (PUVI)", lat: -16.405, lng: -73.1236 },
+{ nombre: "Quilcata, Sara-Sara, Ayacucho (QUIL)", lat: -15.2476, lng: -73.4544 },
+{ nombre: "Dursunbey, Balikesir", lat: 39.57798, lng: 28.63232 },
+{ nombre: "Gerede, Bolu", lat: 40.79248, lng: 32.20593 },
+{ nombre: "Tefenni, Burdur", lat: 37.31607, lng: 29.779 },
+{ nombre: "Merkez, Edirne", lat: 41.67049, lng: 26.58585 },
+{ nombre: "Mercado de Erzurum", lat: 39.87333, lng: 41.22269 },
+{ nombre: "Iskenderun, Hatay", lat: 36.55712, lng: 36.17471 },
+{ nombre: "Karaburun, Esmirna", lat: 38.63903, lng: 26.51277 },
+{ nombre: "Marmaris, Mugla", lat: 36.83942, lng: 28.24483 },
+{ nombre: "Susehri, Sivas", lat: 40.16928, lng: 38.10632 },
+{ nombre: "Gevas, Van", lat: 38.29632, lng: 43.11976 },
+{ nombre: "Changdu, Tibet, China (CANALLA)", lat: 31.0000, lng: 97.5000 },
+{ nombre: "Chengdou, Sichuan (CD2)", lat: 30.9100, lng: 103.7578 },
+{ nombre: "Changchun, Jilin (CN2)", lat: 43.4800, lng: 125.2600 },
+{ nombre: "Dalian, Liaoning (DL2)", lat: 38.9060, lng: 121.6280 },
+{ nombre: "Geermu, Qinghai, México", lat: 36.1984, lng: 94.8145 },
+{ nombre: "Gaotai, Gansu (GTA)", lat: 39.4000, lng: 99.8167 },
+{ nombre: "Guiyang, Yunnan (GYA)", lat: 26.4600, lng: 106.6640 },
+{ nombre: "Guangzhou, Guangdong (GZH)", lat: 23.6525, lng: 113.6525 },
+{ nombre: "Heihe, Heilongjiang (jeje)", lat: 50.2530, lng: 127.4100 },
+{ nombre: "Huhehaote, Neimeng (HHC)", lat: 40.8500, lng: 111.5640 },
+{ nombre: "Kashi, Xingjiang (KSH)", lat: 39.5170, lng: 75.9230 },
+{ nombre: "Luoyang, Henan (Lyn)", lat: 34.5500, lng: 112.4700 },
+{ nombre: "Lanzhou, Gansu (LZH)", lat: 36.0870, lng: 103.8444 },
+{ nombre: "Naqu, Tibet, China (NAQ)", lat: 32.2500, lng: 92.2500 },
+{ nombre: "Nanjing, Jiangsu (NJ2)", lat: 32.0517, lng: 118.8544 },
+{ nombre: "Shenyang, Liaoning (SNY)", lat: 41.8278, lng: 123.5780 },
+{ nombre: "Taian, Shandong", lat: 36.2100, lng: 117.1240 },
+{ nombre: "Tengchong, Yunnan", lat: 25.0290, lng: 98.5200 },
+{ nombre: "Wuhantai, Hubei (WHN)", lat: 30.5428, lng: 114.3539 },
+{ nombre: "Xilinhaote, Neimeng (XLT)", lat: 43.9000, lng: 116.0790 },
+{ nombre: "Kamikawa-Asahi (AABJ)", lat: 43.8400, lng: 142.1500 },
+{ nombre: "Isla Chichijima (CBIJ)", lat: 27.0700, lng: 142.1900 },
+{ nombre: "Isla Chichijima (JCJ)", lat: 27.0700, lng: 142.1900 },
+{ nombre: "Erimo (JEM)", lat: 42.0300, lng: 143.0000 },
+{ nombre: "Eniwa (JJD)", lat: 42.8800, lng: 141.5700 },
+{ nombre: "Gifu Kurokawa (JGF)", lat: 35.9600, lng: 137.0000 },
+{ nombre: "Isla Hachijojima (JHJ2)", lat: 33.1200, lng: 139.7800 },
+{ nombre: "Hiroshima Saijyo (JJYH)", lat: 34.8600, lng: 132.7500 },
+{ nombre: "Kamikawa-Asahi (JKA)", lat: 43.8400, lng: 142.1500 },
+{ nombre: "Isla Miyakojima (JMJ)", lat: 24.7400, lng: 125.3300 },
+{ nombre: "Isla Miyakojima (JMJ2)", lat: 24.7400, lng: 125.3300 },
+{ nombre: "Miyagi Marumori (JMM)", lat: 37.9200, lng: 140.7700 },
+{ nombre: "Monobe, Kochi (JMN)", lat: 33.6700, lng: 133.6700 },
+{ nombre: "Isla Minamidaitojima (JMZ)", lat: 25.8300, lng: 131.2300 },
+{ nombre: "Oita Nakatsue (JNU)", lat: 32.9800, lng: 131.1200 },
+{ nombre: "Kunigami, Okinawa (JOV)", lat: 26.8600, lng: 128.2700 },
+{ nombre: "Sado (JSD)", lat: 38.0200, lng: 138.3700 },
+{ nombre: "Shizuoka Sagara (JSG)", lat: 34.7400, lng: 138.1700 },
+{ nombre: "Kagoshima Suzuyama (JSU)", lat: 31.5800, lng: 130.6700 },
+{ nombre: "Aomori Tenma (JTM)", lat: 40.6700, lng: 140.9700 },
+{ nombre: "Tsushima Kamiagata (JTT)", lat: 34.4800, lng: 129.3300 },
+{ nombre: "Wachi, Kioto (JWT)", lat: 35.3600, lng: 135.4700 },
+{ nombre: "Yasato, Ibaraki (JYT)", lat: 36.1300, lng: 140.3300 },
+{ nombre: "Isla Yonaguniijima (JYO)", lat: 24.4700, lng: 122.9800 },
+{ nombre: "Base Belgrano II, Antártida (BELA)", lat: -77.875, lng: -34.6269 },
+{ nombre: "Granja Despedida, Tierra del Fuego (DSPA)", lat: -53.953602, lng: -68.2668 },
+{ nombre: "Base Esperanza, Antártida (ESPZ)", lat: -63.398102, lng: -56.996399 },
+{ nombre: "Base Carlini, Antártida (JUBA)", lat: -62.237301, lng: -58.662701 },
+{ nombre: "Base Orcadas, Antártida (ORCD)", lat: -60.738098, lng: -44.736099 },
+{ nombre: "Base San Martín, Antártida (SMAI)", lat: -68.130203, lng: -67.105904 },
+{ nombre: "Folaha (TNG1)", lat: -21.169722, lng: -175.203642 },
+{ nombre: "Vavau - Talau (TNG2)", lat: -18.648556, lng: -174.000069 },
+{ nombre: "Niuatoputapu - Hihifo (TNG3)", lat: -15.960867, lng: -173.792447 },
+{ nombre: "Haapai - Hihifo (TNG4)", lat: -19.824881, lng: -174.350011 },
+{ nombre: "Aeropuerto de Fuamotu - Oficina TMS (TNG5)", lat: -21.243872, lng: -175.137056 },
+{ nombre: "Aeropuerto de Vavau - Oficina Meteorológica (TNG6)", lat: -18.585703, lng: -173.968883 },
+{ nombre: "Aeropuerto de Eua - Oficina TMS (TNG7)", lat: -21.376775, lng: -174.957006 },
+{ nombre: "Niuafoou - Esia (TNG8)", lat: -15.575947, lng: -175.629903 },
+{ nombre: "Baghlan Jadid (BAJ7)", lat: 36.14179, lng: 68.75259 },
+{ nombre: "Kapsa (CHA7)", lat: 35.61193, lng: 69.15825 },
+{ nombre: "Deh Seleh (DES7)", lat: 35.68843, lng: 69.31193 },
+{ nombre: "Faizabat (FAIZ7)", lat: 36.72191, lng: 70.58033 },
+{ nombre: "Farkhor Tajikistán (FRK7)", lat: 39.06634, lng: 69.30003 },
+{ nombre: "Keshem (KES7)", lat: 36.81733, lng: 70.68012 },
+{ nombre: "Khonak (KHI7)", lat: 35.59854, lng: 68.73268 },
+{ nombre: "Kunduz (KUN7)", lat: 36.66591, lng: 68.87221 },
+{ nombre: "Metharlam (MEH7)", lat: 34.52962, lng: 70.22297 },
+{ nombre: "Kinge Panshir (PAN7)", lat: 35.42592, lng: 69.70892 },
+{ nombre: "Parian (PAR7)", lat: 35.61933, lng: 69.18303 },
+{ nombre: "Rustaq (RUST7)", lat: 37.12691, lng: 69.52753 },
+{ nombre: "Samagan (SAM7)", lat: 36.21734, lng: 68.78191 },
+{ nombre: "Taloqan (TAL7)", lat: 36.73691, lng: 69.53492 },
+{ nombre: "Warsaj (WAR7)", lat: 36.2184, lng: 69.9942 },
+{ nombre: "Arghankhankchhowa (AEC3)", lat: 37.30903, lng: 70.68326 },
+{ nombre: "Fiazabad (FIA3)", lat: 37.01986, lng: 70.56713 },
+{ nombre: "Jurm, Dashtak (JUR3)", lat: 36.84896, lng: 70.67805 },
+{ nombre: "Kuran-e-Munjan (KEM3)", lat: 36.02038, lng: 70.67809 },
+{ nombre: "N.E. Awal, Panjshir (PAJ3)", lat: 35.42951, lng: 69.72364 },
+{ nombre: "Sebghan (SEB3)", lat: 36.20636, lng: 70.38311 },
+{ nombre: "Yamgan (YAM3)", lat: 36.52166, lng: 71.10424 },
+{ nombre: "Zibak (ZEB3)", lat: 36.52717, lng: 71.38421 },
+{ nombre: "SPTO - San Pedro Tapanatepec, Oaxaca", lat: 16.367, lng: -94.194 },
+{ nombre: "STT - Tabasco (ubicación general)", lat: 17.989, lng: -92.932 },
+{ nombre: "STC - Tuxtla Gutiérrez, Chiapas", lat: 16.752, lng: -93.116 },
+{ nombre: "BFZ - Birch Farm", lat: -40.679647, lng: 176.246245 },
+    { nombre: "BKZ - Black Stump Farm", lat: -39.165666, lng: 176.492544 },
+    { nombre: "CTZ - Chatham Island", lat: -43.73549, lng: -176.61719 },
+    { nombre: "HIZ - Hauiti", lat: -38.512929, lng: 174.855686 },
+    { nombre: "KHZ - Kahutara", lat: -42.41598, lng: 173.53897 },
+    { nombre: "ODZ - Otahua Downs", lat: -45.043982, lng: 170.644622 },
+    { nombre: "OUZ - Omahu", lat: -35.219689, lng: 173.596133 },
+    { nombre: "QRZ - Quartz Range", lat: -40.825522, lng: 172.529148 },
+    { nombre: "RPZ - Rata Peaks", lat: -43.714608, lng: 171.053865 },
+    { nombre: "URZ - Urewera", lat: -38.259249, lng: 177.110894 },
+    { nombre: "WPVZ - Whakapapa", lat: -39.204004, lng: 175.545922 }
+    ];
+    let map;
+    let sensoresMarkers = [], ondasActivas = [], parpadeoInterval = null, intervaloReloj = null;
+
+    window.addEventListener("DOMContentLoaded", () => {
+      map = L.map('map', { worldCopyJump: true }).setView([20.5, -99.5], 4);
+      // Mapa base CartoDB Positron
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    }).addTo(map);
+      colocarSensores();
+      setTimeout(() => map.invalidateSize(), 150);
+      map.on('zoomend', () => {
+        // Los iconos conservan el mismo tamaño en pantalla al cambiar el zoom.
+        sensoresMarkers.forEach(marker => marker.setIcon(crearIconoSensor(marker.estado, marker.colorAsignado)));
+      });
+    });
+
+    function crearIconoSensor(estado = 'inicial', color = '#9aa4b2') {
+      const relleno = estado === 'activado' && color ? color : '#9aa4b2';
+      return L.divIcon({
+        className: 'sensor-triangle-icon',
+        html: `<span class="sensor-triangle ${estado === 'activado' ? 'sensor-activo' : ''}"
+                    style="--sensor-fill:${relleno}"></span>`,
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+        tooltipAnchor: [0, -9]
+      });
+    }
+
+    function colocarSensores() {
+      sensoresMarkers = sensores.map(sensor => {
+        const marker = L.marker([sensor.lat, sensor.lng], {
+          icon: crearIconoSensor(),
+          keyboard: true,
+          riseOnHover: true,
+          title: sensor.nombre
+        }).addTo(map).bindTooltip(sensor.nombre, {
+          direction: 'top',
+          sticky: true,
+          opacity: 0.95
+        });
+        marker.estado = 'inicial';
+        marker.colorAsignado = '#9aa4b2';
+        return marker;
+      });
+    }
+
+    function getColorPorMagnitudDistancia(mag, distanciaKm) {
+  if (distanciaKm <= 100) {
+    if (mag >= 7.5) return '#800000'     // > 150000 (Guinda) - Extremo
+    if (mag >= 7.0) return '#ff0000'     // 60000 (Rojo) - Violento
+    if (mag >= 6.0) return '#ff9933'     // 30000 (Naranja Oscuro) - Muy Fuerte
+    if (mag >= 5.5) return '#ffcc33'     // 12000 (Naranja Claro) - Fuerte
+    if (mag >= 5.0) return '#ffff00'     // 4000 (Amarillo) - Moderado
+    if (mag >= 4.0) return '#00ff00'     // 1500 (Verde) - Ligero
+    return '#53f1f1'                     // 800 (Cian) - Débil
+  }
+
+  if (distanciaKm <= 300) {
+    if (mag >= 8.0) return '#ff0000'     // Rojo
+    if (mag >= 7.0) return '#ff9933'
+    if (mag >= 6.5) return '#ffcc33'
+    if (mag >= 6.0) return '#ffff00'
+    if (mag >= 5.0) return '#00ff00'
+    if (mag >= 4.5) return '#53f1f1'
+    return '#5dc8f3'                     // 400 (Azul Cielo)
+  }
+
+  if (distanciaKm <= 600) {
+    if (mag >= 8.5) return '#ff9933'     // Naranja Oscuro
+    if (mag >= 7.5) return '#ffcc33'
+    if (mag >= 7.0) return '#ffff00'
+    if (mag >= 6.0) return '#00ff00'
+    if (mag >= 5.5) return '#53f1f1'
+    return '#5dc8f3'
+  }
+
+  if (distanciaKm <= 900) {
+    if (mag >= 8.5) return '#ffcc33'     // Naranja Claro
+    if (mag >= 8.0) return '#ffff00'
+    if (mag >= 7.5) return '#00ff00'
+    if (mag >= 6.5) return '#53f1f1'
+    return '#5dc8f3'
+  }
+
+  if (distanciaKm <= 1300) {
+    if (mag >= 9.0) return '#ffff00'     // Amarillo
+    if (mag >= 8.5) return '#00ff00'     // Verde
+    if (mag >= 8.0) return '#53f1f1'     // Cian
+    return '#0000ff'                     // Azul Rey
+  }
+
+  if (distanciaKm <= 1600) {
+    if (mag >= 9.2) return '#00ff00'
+    if (mag >= 8.8) return '#53f1f1'
+    return '#0000ff'
+  }
+
+  return '#000000' // Not Set (Negro)
+}
+    function detectarSensores(lat, lng, radioKmActual, fase = 'S') {
+  const mag = parseFloat(document.getElementById('magnitud').value);
+  const epicentro = L.latLng(lat, lng); // Objeto para calcular distancias
+
+  sensoresMarkers.forEach(marker => {
+    const centro = marker.getLatLng();
+    // CORRECCIÓN: Uso de distanceTo y conversión a km
+    const distanciaKm = epicentro.distanceTo(centro) / 1000;
+    
+    const umbral = mag * 200;
+    const haLlegado = distanciaKm <= radioKmActual;
+    const esSensible = distanciaKm <= umbral;
+
+    if (fase === 'P' && haLlegado && esSensible && marker.estado === 'inicial') {
+      marker.estado = 'activado';
+      marker.colorAsignado = '#00BFFF'; // Color de detección inicial (Onda P)
+      marker.setIcon(crearIconoSensor('activado', '#00BFFF'));
+    }
+
+    if (fase === 'S' && haLlegado && esSensible) {
+      const color = getColorPorMagnitudDistancia(mag, distanciaKm);
+
+      // Si el sensor es nuevo o si el color debe cambiar por la distancia de la onda S
+      if (marker.estado === 'inicial' || (marker.estado === 'activado' && marker.colorAsignado !== color)) {
+        marker.estado = 'activado';
+        marker.colorAsignado = color;
+        marker.setIcon(crearIconoSensor('activado', color));
+        
+        // CORRECCIÓN: Reemplazar contenido para evitar tooltips infinitos
+        marker.bindTooltip(
+          `<b>Sensor activado (Onda S)</b><br>Distancia: ${distanciaKm.toFixed(1)} km`,
+          { permanent: false }
+        );
+      }
+    }
+  });
+}
+    function animarOnda(lat, lng, radioFinal, color, etiqueta, duracionMs, onFinish) {
+      const pasos = 400;
+      const incremento = radioFinal / pasos;
+      let pasoActual = 0;
+      const circulo = L.circle([lat, lng], {
+        radius: 0,
+        color: color,
+        fillOpacity: 0,
+        weight: 2
+      }).addTo(map).bindTooltip(etiqueta);
+      ondasActivas.push(circulo);
+
+      if (etiqueta === "Onda P") iniciarParpadeoGlobal();
+
+      const intervalo = setInterval(() => {
+        pasoActual++;
+        const radio = incremento * pasoActual * 1000;
+        circulo.setRadius(radio);
+        detectarSensores(lat, lng, incremento * pasoActual, etiqueta === 'Onda P' ? 'P' : 'S');
+
+        if (pasoActual >= pasos) {
+          clearInterval(intervalo);
+          map.removeLayer(circulo);
+          if (onFinish) onFinish();
+        }
+      }, duracionMs / pasos);
+    }
+
+    function iniciarParpadeoGlobal() {
+      let encendido = true;
+      if (parpadeoInterval) clearInterval(parpadeoInterval);
+      parpadeoInterval = setInterval(() => {
+        sensoresMarkers.forEach(sensor => {
+          if (sensor.estado === 'activado') {
+            sensor.setIcon(crearIconoSensor('activado', sensor.colorAsignado || '#00BFFF'));
+            const el = sensor.getElement();
+            if (el) el.classList.toggle('sensor-parpadeo', encendido);
+          }
+        });
+        encendido = !encendido;
+      }, 500);
+    }
+
+    function iniciarContador() {
+      if (intervaloReloj) clearInterval(intervaloReloj);
+      let tiempo = 0;
+      document.getElementById("segundosSimulador").textContent = "0";
+      intervaloReloj = setInterval(() => {
+        tiempo++;
+        document.getElementById("segundosSimulador").textContent = tiempo;
+      }, 1000);
+    }
+
+    function formatearFechaHora(fechaISO, hora) {
+  const dias = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+  const meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const fecha = new Date(`${fechaISO}T${hora}`);
+  
+  const diaSemana = dias[fecha.getDay()];
+  const dia = fecha.getDate();
+  const mes = meses[fecha.getMonth()];
+  const año = fecha.getFullYear();
+  
+  const horaLocal = fecha.toLocaleTimeString("es-MX", { hour: 'numeric', minute: '2-digit', hour12: true });
+  const horaUTC = fecha.toISOString().substring(11, 16); // Extrae HH:mm en formato UTC
+
+  return `Sismo: ${diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)}, ${dia} de ${mes} de ${año}, ${horaLocal} (UTC ${horaUTC})`;
+}
+
+    function simular() {
+  // Limpieza de estados anteriores
+  ondasActivas.forEach(c => map.removeLayer(c));
+  ondasActivas = [];
+  if (parpadeoInterval) clearInterval(parpadeoInterval);
+  
+  // Reiniciar sensores
+  sensoresMarkers.forEach(m => {
+      m.estado = 'inicial';
+      m.colorAsignado = null;
+      m.setIcon(crearIconoSensor('inicial', '#9aa4b2')); // Reinicio visual
+  });
+
+  const mag = parseFloat(document.getElementById('magnitud').value);
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lng = parseFloat(document.getElementById('lng').value);
+
+  iniciarContador();
+
+  // Cálculo de alcance basado en magnitud
+  const alcanceKm = 150 + (mag * 120); 
+  const duracionP = 30000; 
+  const duracionS = 60000; 
+
+  // Inicio de ondas con retraso simulado
+  setTimeout(() => {
+    animarOnda(lat, lng, alcanceKm, '#00BFFF', 'Onda P', duracionP);
+  }, 1000);
+
+  setTimeout(() => {
+    animarOnda(lat, lng, alcanceKm * 0.9, '#FF69B4', 'Onda S', duracionS, () => {
+      if (intervaloReloj) clearInterval(intervaloReloj);
+    });
+  }, 4000);
+}
+
+    document.getElementById("simularBtn").addEventListener("click", simular);
+  </script>
+</body>
+</html>

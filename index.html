@@ -124,8 +124,8 @@
     .sensor-triangle-icon { background:transparent; border:0; }
     .sensor-triangle {
       display:block; width:0; height:0; margin:2px auto 0;
-      border-left:9px solid transparent; border-right:9px solid transparent;
-      border-bottom:16px solid var(--sensor-fill,#9aa4b2);
+      border-left:11px solid transparent; border-right:11px solid transparent;
+      border-bottom:20px solid var(--sensor-fill,#9aa4b2);
       filter:drop-shadow(0 0 2px #07111f) drop-shadow(0 1px 3px rgba(0,0,0,.9));
       transition:filter .12s ease,transform .12s ease;
     }
@@ -179,7 +179,43 @@
       .institutoMxSub{font-size:.59rem}
       .timestamp,#contadorSimulacion{font-size:.75rem}
     }
-  </style>
+  
+    /* REPORTE AUTOMÁTICO IISV */
+    #reporteAutomatico{display:none;max-width:1180px;margin:28px auto;padding:24px;background:#fff;color:#243247;border:1px solid #cbd5e0;border-radius:16px;box-shadow:0 18px 45px rgba(0,0,0,.22)}
+    #reporteAutomatico.visible{display:block}
+    .reporte-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+    .reporte-toolbar button{border:0;border-radius:8px;padding:10px 16px;background:#2563a6;color:white;font-weight:800;cursor:pointer}
+    .reporte-header{display:flex;justify-content:space-between;gap:15px;align-items:center;border-bottom:3px solid #1a202c;padding-bottom:10px;margin-bottom:12px}
+    .reporte-header h2{font-size:26px;margin:0;color:#1a202c}
+    .reporte-header p{margin:3px 0 0;font-size:10px;color:#4a5568;text-transform:uppercase;font-weight:700}
+    .reporte-tipo{text-align:right;color:#c53030;font-weight:800;font-size:17px}
+    .reporte-tipo small{display:block;color:#718096;font-size:10px;margin-top:4px}
+    .reporte-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}
+    .reporte-panel{border:1px solid #e2e8f0;border-radius:7px;padding:12px;background:#f8fafc;margin-bottom:9px}
+    .reporte-panel h3,.reporte-section-title{margin:0 0 8px;padding-bottom:5px;border-bottom:2px solid #e2e8f0;color:#1a202c;font-size:14px}
+    .reporte-datos{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;font-size:13px}
+    .reporte-dato{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed #d9e2ec;padding-bottom:4px}
+    .reporte-dato span:first-child{color:#526174;font-weight:600}
+    .reporte-dato strong{text-align:right;color:#1a202c}
+    .reporte-mapa{min-height:260px;background:#eef3f8;border:1px solid #d5dee8;border-radius:6px;display:grid;place-items:center;overflow:hidden}
+    .reporte-mapa img{display:block;width:100%;height:auto}
+    .reporte-mapa .mapa-fallback{padding:20px;text-align:center;color:#526174;font-size:12px}
+    .reporte-tabla{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0 14px}
+    .reporte-tabla th,.reporte-tabla td{border:1px solid #cbd5e0;padding:8px;text-align:center}
+    .reporte-tabla th{background:#edf2f7;color:#2d3748}
+    .reporte-tabla .nivel{font-weight:800}
+    .reporte-nota{font-size:10px;line-height:1.5;color:#526174;background:#f8fafc;border:1px solid #e2e8f0;padding:10px;border-radius:6px}
+    .reporte-pie{margin-top:12px;padding-top:8px;border-top:2px solid #2d3748;text-align:center;font-size:10px;color:#718096}
+    @media(max-width:700px){#reporteAutomatico{padding:14px}.reporte-grid{grid-template-columns:1fr}.reporte-header{align-items:flex-start}.reporte-datos{grid-template-columns:1fr}.reporte-header h2{font-size:22px}}
+    @media print{
+      @page{size:letter;margin:12mm}
+      body{background:#fff!important;padding:0!important;color:#111!important}
+      body::before,.controls,.timestamp,#map,#contadorSimulacion,.footer,.version,.notice{display:none!important}
+      #reporteAutomatico{display:block!important;max-width:none;margin:0;padding:0;border:0;box-shadow:none;border-radius:0}
+      .reporte-toolbar{display:none!important}
+      .reporte-panel{break-inside:avoid}
+    }
+</style>
 </head>
 <body>
   <h1>Instituto de Investigaciones Sísmicas y Volcánicas</h1>
@@ -246,16 +282,82 @@
   <div class="footer">
     ⚠️ Herramienta educativa desarrollada por el <strong>Instituto de Investigaciones Sísmicas y Volcánicas</strong>.
   </div>
-  <div class="version">Simulador Sísmico — <strong>Versión Beta 0.11.0</strong></div>
+  <div class="version">Simulador Sísmico — <strong>Versión Beta 0.12.0</strong></div>
   <div class="notice">
     ⚠️ <strong>Simulación experimental:</strong> Este modelo representa una aproximación visual a la propagación de ondas sísmicas.
-    La percepción se estima mediante magnitud, distancia hipocentral y profundidad; no equivale a una medición instrumental
+    La percepción se estima mediante una aproximación logarítmica IISV (M, distancia hipocentral y profundidad); no equivale a una GMICE calibrada ni a una medición instrumental
     de intensidad Mercalli ni a un modelo regional validado. El efecto de sitio usa una clasificación geológica regional
     precargada para cada estación. Esta herramienta no predice eventos reales ni reemplaza sistemas
     de alerta oficial. Para información validada, consulte las fuentes sismológicas oficiales.
   </div>
 
+
+  <section id="reporteAutomatico" aria-live="polite">
+    <div class="reporte-toolbar">
+      <strong>Reporte de simulación generado automáticamente</strong>
+    </div>
+    <div class="reporte-header">
+      <div><h2>IISV</h2><p>Instituto de Investigación Sísmica y Volcánica</p></div>
+      <div class="reporte-tipo">REPORTE SÍSMICO<small>Simulación institucional · México</small></div>
+    </div>
+    <div class="reporte-grid">
+      <div>
+        <div class="reporte-panel">
+          <h3 id="reporteTituloEvento">Evento sísmico simulado</h3>
+          <div class="reporte-datos" id="reporteDatosEvento"></div>
+        </div>
+        <div class="reporte-panel">
+          <h3>Contexto tectónico de México</h3>
+          <p style="font-size:11px;line-height:1.5;margin:0 0 6px">México se posiciona sobre la interacción de cinco placas: <strong>Norteamericana, Cocos, Pacífico, Rivera y Caribe</strong>.</p>
+          <p style="font-size:11px;line-height:1.5;margin:0">La subducción de la Placa de Cocos bajo la Norteamericana genera alta sismicidad en el litoral del Pacífico.</p>
+        </div>
+      </div>
+      <div class="reporte-panel">
+        <h3>Mapa de estaciones y propagación</h3>
+        <div class="reporte-mapa" id="reporteMapa"><div class="mapa-fallback">La vista del mapa de simulación se incorporará al reporte al finalizar el evento.</div></div>
+      </div>
+    </div>
+    <h3 class="reporte-section-title">Escala de percepción estimada · IISV</h3>
+    <table class="reporte-tabla">
+      <thead><tr><th>Intensidad</th><th>I</th><th>II</th><th>III</th><th>IV</th><th>V</th><th>VI</th><th>VII</th><th>VIII</th><th>IX</th><th>X+</th></tr></thead>
+      <tbody>
+        <tr><th>Color</th>
+          <td style="background:#0000ff;color:#fff;font-weight:800">●</td>
+          <td style="background:#5dc8f3;color:#102030;font-weight:800">●</td>
+          <td style="background:#53f1f1;color:#102030;font-weight:800">●</td>
+          <td style="background:#00cc00;color:#102030;font-weight:800">●</td>
+          <td style="background:#ffff00;color:#102030;font-weight:800">●</td>
+          <td style="background:#ffcc33;color:#102030;font-weight:800">●</td>
+          <td style="background:#ff9933;color:#102030;font-weight:800">●</td>
+          <td style="background:#ff0000;color:#fff;font-weight:800">●</td>
+          <td style="background:#800000;color:#fff;font-weight:800">●</td>
+        </tr>
+        <tr><th>Percepción</th><td>No sentido</td><td>Muy débil</td><td>Débil</td><td>Ligero</td><td>Moderado</td><td>Fuerte</td><td>Muy fuerte</td><td>Violento</td><td>Extremo</td></tr>
+        <tr><th>Daño potencial</th><td>Ninguno</td><td>Ninguno</td><td>Ninguno</td><td>Ninguno</td><td>Muy ligero</td><td>Ligero</td><td>Moderado</td><td>Moderado/alto</td><td>Alto</td><td>Muy alto</td></tr>
+      </tbody>
+    </table>
+    <h3 class="reporte-section-title">Estaciones que registraron la onda S</h3>
+    <div id="reporteResumenEstaciones" class="reporte-nota"></div>
+    <table class="reporte-tabla">
+      <thead><tr><th>Clave / color registrado</th><th>Estación</th><th>Intensidad</th><th>Nivel</th><th>Terreno</th><th>Factor</th></tr></thead>
+      <tbody id="reporteTablaEstaciones"></tbody>
+    </table>
+    <h3 class="reporte-section-title">Sismos históricos de referencia en México</h3>
+    <table class="reporte-tabla">
+      <thead><tr><th>Fecha</th><th>Magnitud</th><th>Región / Epicentro</th></tr></thead>
+      <tbody>
+        <tr><td>1985-09-19</td><td>8.1</td><td>Costa de Michoacán (efecto en CDMX)</td></tr>
+        <tr><td>2017-09-07</td><td>8.2</td><td>Golfo de Tehuantepec</td></tr>
+        <tr><td>2017-09-19</td><td>7.1</td><td>Puebla - Morelos</td></tr>
+        <tr><td>2018-02-16</td><td>7.2</td><td>Oaxaca (Pinotepa Nacional)</td></tr>
+      </tbody>
+    </table>
+    <div class="reporte-nota"><strong>Nota metodológica:</strong> Este documento resume una simulación educativa. La intensidad se estima mediante magnitud, distancia hipocentral y un factor de sitio asignado a cada estación. No equivale a una medición instrumental de intensidad Mercalli ni a un modelo regional validado; no predice eventos reales ni sustituye los sistemas oficiales de alerta.</div>
+    <div class="reporte-pie">Desarrollado de forma íntegra por el Instituto de Investigación Sísmica y Volcánica · IISV</div>
+  </section>
+
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
     // Factores de sitio integrados al modelo del simulador.
     // Se aplican como corrección logarítmica al índice I*, no como multiplicación directa de intensidad.
@@ -445,6 +547,8 @@
     let timeoutsSimulacion = [];
     let notificaciones = [];
     let notificacionesNoLeidas = 0;
+    let datosUltimaSimulacion = null;
+    let simulacionEnCurso = false;
 
     window.addEventListener("DOMContentLoaded", () => {
       map = L.map("map", { worldCopyJump: true }).setView([20.5, -99.5], 4);
@@ -475,9 +579,9 @@
       return L.divIcon({
         className: "sensor-triangle-icon",
         html: `<span class="sensor-triangle ${estado === "activado" ? "sensor-activo" : ""}" style="--sensor-fill:${relleno}"></span>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 10],
-        tooltipAnchor: [0, -9]
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        tooltipAnchor: [0, -11]
       });
     }
 
@@ -510,12 +614,12 @@
       R es la distancia hipocentral en km: sqrt(distancia epicentral² + profundidad²).
       No es una ecuación de predicción de movimiento fuerte validada.
     */
+    // Modelo didáctico de atenuación: índice IISV, no una GMICE oficial.
+    // Intensidad instrumental Mercalli requiere PGA/PGV medidos y ecuaciones regionales.
     function calcularIntensidadEstimada(mag, distanciaEpicentralKm, profundidadKm) {
-      const distanciaHipocentral = Math.sqrt(
-        Math.pow(distanciaEpicentralKm, 2) + Math.pow(profundidadKm, 2)
-      );
-      const R = Math.max(distanciaHipocentral, 1);
-      return mag - 2.2 * Math.log10(R / 10);
+      const R = Math.max(Math.sqrt(distanciaEpicentralKm ** 2 + profundidadKm ** 2), 1);
+      // Aproximación logarítmica tipo intensidad-distancia; se limita a I–X.
+      return Math.max(1, Math.min(10, 1.5 * mag - 3.5 * Math.log10(R) + 3.0));
     }
 
     function obtenerIdEstacion(sensor) {
@@ -537,7 +641,7 @@
       const intensidadBase = calcularIntensidadEstimada(mag, distanciaEpicentralKm, profundidadKm);
       const datosSuelo = obtenerDatosGeologicos(idEstacion);
       const factorSitio = FACTORES_DE_SITIO[datosSuelo.suelo] ?? 1.0;
-      const correccionSitio = 2.2 * Math.log10(factorSitio);
+      const correccionSitio = Math.max(0, Math.min(1.2, 1.0 * Math.log10(factorSitio)));
       const intensidadFinal = intensidadBase + correccionSitio;
 
       return {
@@ -744,6 +848,8 @@
     }
 
     function limpiarSimulacionAnterior() {
+      simulacionEnCurso = false;
+      document.getElementById("reporteAutomatico").classList.remove("visible");
       ondasActivas.forEach(circulo => map.removeLayer(circulo));
       ondasActivas = [];
       notificaciones = [];
@@ -791,6 +897,8 @@
         return;
       }
 
+      datosUltimaSimulacion = { mag, profundidad, lat, lng, fecha, hora, inicio: new Date() };
+      simulacionEnCurso = true;
       document.getElementById("horaSimulacion").textContent =
         fecha && hora ? formatearFechaHora(fecha, hora) : "Evento sin fecha y hora especificadas";
 
@@ -814,9 +922,74 @@
             intervaloReloj = null;
           }
           // El parpadeo continúa hasta que se inicie una nueva simulación.
+          simulacionEnCurso = false;
+          generarReporteAutomatico();
         });
       }, 4000));
     }
+
+
+    function escaparHTML(valor) {
+      return String(valor ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    }
+
+    function generarReporteAutomatico() {
+      if (!datosUltimaSimulacion) return;
+      const d = datosUltimaSimulacion;
+      const fechaTexto = d.fecha ? new Date(d.fecha + "T12:00:00").toLocaleDateString("es-MX",{day:"2-digit",month:"long",year:"numeric"}) : "No especificada";
+      const horaTexto = d.hora || "No especificada";
+      const duracion = document.getElementById("segundosSimulador").textContent;
+      const detecciones = [...notificaciones].sort((a,b) => b.intensidad-a.intensidad);
+      const maximo = detecciones[0];
+      const titulo = `Sismo simulado · Mw ${d.mag.toFixed(1)} · ${fechaTexto}`;
+      document.getElementById("reporteTituloEvento").textContent = titulo;
+      const campos = [
+        ["Agencia","IISV · Simulador institucional"],
+        ["Fecha del evento",fechaTexto],
+        ["Hora local",horaTexto],
+        ["Magnitud",`${d.mag.toFixed(1)} Mw`],
+        ["Latitud",`${d.lat.toFixed(3)}°`],
+        ["Longitud",`${d.lng.toFixed(3)}°`],
+        ["Profundidad",`${d.profundidad.toFixed(0)} km`],
+        ["Coordenadas epicentrales",`${d.lat.toFixed(3)}°, ${d.lng.toFixed(3)}°`],
+        ["Corrección de sitio","Clasificación geológica por estación; corrección logarítmica"],
+        ["Total de sensores",`${sensores.length} estaciones`],
+        ["Mayor intensidad",maximo ? `${maximo.intensidad.toFixed(2)} · ${maximo.clase.nombre} (${maximo.clase.nivel})` : "Sin detecciones de onda S"],
+        ["Duración de simulación",`${duracion} segundos`]
+      ];
+      document.getElementById("reporteDatosEvento").innerHTML = campos.map(([k,v]) =>
+        `<div class="reporte-dato"><span>${escaparHTML(k)}</span><strong>${escaparHTML(v)}</strong></div>`).join("");
+      document.getElementById("reporteResumenEstaciones").textContent =
+        `Se activaron ${detecciones.length} estaciones de ${sensores.length}. ` +
+        (maximo ? `La mayor intensidad estimada fue ${maximo.intensidad.toFixed(2)} (${maximo.clase.nombre}, ${maximo.clase.nivel}) en ${maximo.ciudad}.` : "Ninguna estación superó el umbral de detección configurado.");
+      document.getElementById("reporteTablaEstaciones").innerHTML = detecciones.length
+        ? detecciones.map(n => `<tr><td style="background:${n.clase.color};color:${["#0000ff","#800000","#ff0000"].includes(n.clase.color) ? "#fff" : "#17212b"};font-weight:900;border:2px solid #64748b">${escaparHTML(n.clave)}</td><td>${escaparHTML(n.ciudad)}</td><td>${n.intensidad.toFixed(2)}</td><td class="nivel"><span style="display:inline-block;padding:4px 7px;border-radius:5px;background:${n.clase.color};color:${["#0000ff","#800000","#ff0000"].includes(n.clase.color) ? "#fff" : "#17212b"};font-weight:800">${escaparHTML(n.clase.nivel)} · ${escaparHTML(n.clase.nombre)}</span></td><td>${escaparHTML(n.suelo)}</td><td>×${n.factorSitio.toFixed(1)}</td></tr>`).join("")
+        : '<tr><td colspan="6">No se registraron estaciones activadas.</td></tr>';
+
+      const reporte = document.getElementById("reporteAutomatico");
+      reporte.classList.add("visible");
+      setTimeout(() => reporte.scrollIntoView({behavior:"smooth",block:"start"}), 250);
+      capturarMapaParaReporte();
+    }
+
+    function capturarMapaParaReporte() {
+      const destino = document.getElementById("reporteMapa");
+      if (typeof html2canvas === "undefined") {
+        destino.innerHTML = '<div class="mapa-fallback">El reporte incluye los resultados y estaciones detectadas. La captura cartográfica no está disponible en este navegador.</div>';
+        return;
+      }
+      html2canvas(document.getElementById("map"), {useCORS:true, backgroundColor:"#0b1b2b", scale:1})
+        .then(canvas => {
+          const img = document.createElement("img");
+          img.alt = "Mapa de la simulación sísmica y estaciones";
+          img.src = canvas.toDataURL("image/png");
+          destino.replaceChildren(img);
+        })
+        .catch(() => {
+          destino.innerHTML = '<div class="mapa-fallback">No fue posible capturar las teselas del mapa. Los datos de la simulación sí se incorporaron al reporte.</div>';
+        });
+    }
+
 
     document.getElementById("simularBtn").addEventListener("click", simular);
   </script>
